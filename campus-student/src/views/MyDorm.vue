@@ -1,0 +1,48 @@
+<template>
+  <div>
+    <el-card shadow="never" style="border-radius:14px;background:linear-gradient(135deg,#1e5eff,#5b8cff);color:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-size:13px;opacity:.9">我的宿舍</div><div style="font-size:20px;font-weight:800;margin-top:4px">{{ assign ? `${assign.building_id}栋 · ${assign.room_id}房 · ${assign.bed_no}号床` : '尚未分配宿舍' }}</div><div style="font-size:12px;opacity:.85;margin-top:4px">与管理端宿舍管理实时联动 · 已住/容量实时更新</div></div>
+        <el-icon :size="48" style="opacity:.2"><OfficeBuilding /></el-icon>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px" v-if="assign">
+        <el-button size="small" color="#fff" style="color:#1e5eff" @click="doCheckout">申请退宿</el-button>
+        <el-button size="small" plain style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)" @click="selected && doExchange()">调宿到已选</el-button>
+      </div>
+    </el-card>
+
+    <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">可选房源</h3><el-tag type="info">点击卡片选择</el-tag></div>
+    <div class="dorm-grid">
+      <div class="dorm-card" v-for="r in rooms" :key="r.room_id" :class="{selected: selected?.room_id===r.room_id, full: r.occupied>=r.capacity}" @click="selected=r">
+        <div class="dorm-head"><span class="room-no">{{ r.building_id }}栋 {{ r.room_no }}</span><span class="occupy" :class="{danger: r.occupied>=r.capacity}">{{ r.occupied }}/{{ r.capacity }}</span></div>
+        <el-progress :percentage="(r.occupied/r.capacity)*100" :show-text="false" :stroke-width="6" :color="r.occupied>=r.capacity?'#ff4d4f':'#1e5eff'" style="margin:8px 0"/>
+        <div style="font-size:12px;color:#8a94a6">房间ID {{ r.room_id }} · {{ r.occupied>=r.capacity?'已满':'可选' }}</div>
+        <el-button v-if="selected?.room_id===r.room_id" size="small" type="primary" round style="margin-top:8px;width:100%" :disabled="r.occupied>=r.capacity" @click.stop="doAssign()">{{ assign?'调宿':'选此宿舍' }}</el-button>
+      </div>
+    </div>
+  </div>
+</template>
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import request from '@/utils/request'
+import { ElMessage } from 'element-plus'
+const sid=localStorage.getItem('studentId')||''
+const rooms=ref<any[]>([]); const selected=ref<any>(null); const assign=ref<any>(null)
+// 简化：不额外查 assign，选后成功即视为有分配；刷新时可通过尝试 assign 失败判断
+async function loadRooms(){ const res:any=await request.post('/dorm/queryByPage', {pageNo:1,pageSize:20,data:{}}); rooms.value=res.data.list||[] }
+async function doAssign(){ if(!selected.value) return; await request.post('/dorm/assign', {studentId:sid, buildingId:selected.value.building_id, roomId:selected.value.room_id, bedNo:1}); ElMessage.success('选宿舍成功'); assign.value={building_id:selected.value.building_id, room_id:selected.value.room_id, bed_no:1}; loadRooms() }
+async function doExchange(){ await request.post('/dorm/exchange', {studentId:sid, buildingId:selected.value.building_id, roomId:selected.value.room_id, bedNo:1}); ElMessage.success('调宿成功'); assign.value={building_id:selected.value.building_id, room_id:selected.value.room_id, bed_no:1} }
+async function doCheckout(){ await request.post('/dorm/checkout', {studentId:sid}); ElMessage.success('已退宿'); assign.value=null; loadRooms() }
+onMounted(loadRooms)
+</script>
+<style scoped>
+.dorm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:10px}
+.dorm-card{background:#fff;border:1px solid #e6ebf5;border-radius:12px;padding:12px;cursor:pointer;transition:.2s}
+.dorm-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(30,94,255,.12)}
+.dorm-card.selected{border-color:#1e5eff;box-shadow:0 8px 20px rgba(30,94,255,.18)}
+.dorm-card.full{opacity:.6}
+.dorm-head{display:flex;justify-content:space-between;align-items:center;font-weight:700}
+.room-no{font-size:14px}
+.occupy{font-size:12px;padding:2px 8px;border-radius:999px;background:#eef3ff;color:#1e5eff}
+.occupy.danger{background:#ffebe6;color:#ff4d4f}
+</style>

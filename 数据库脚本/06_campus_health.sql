@@ -1,0 +1,26 @@
+USE campus_health;
+
+CREATE TABLE IF NOT EXISTS health_test_list (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  test_name VARCHAR(100) NOT NULL,
+  test_type VARCHAR(50),
+  status CHAR(1) DEFAULT '0',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS health_test_detail (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  list_id BIGINT NOT NULL,
+  question VARCHAR(500) NOT NULL,
+  options TEXT,
+  score INT DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS health_test_result (
+  id VARCHAR(20) PRIMARY KEY,
+  student_id VARCHAR(20) NOT NULL,
+  list_id BIGINT NOT NULL,
+  total_score INT DEFAULT 0,
+  result TEXT,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -1,0 +1,6 @@
+-- 智慧校园 5库初始化
+CREATE DATABASE IF NOT EXISTS campus_system DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE DATABASE IF NOT EXISTS campus_academic DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE DATABASE IF NOT EXISTS campus_resource DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE DATABASE IF NOT EXISTS campus_finance DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE DATABASE IF NOT EXISTS campus_health DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_general_ci;
