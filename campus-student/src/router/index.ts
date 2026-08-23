@@ -1,6 +1,6 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 const router=createRouter({
-  history:createWebHistory(),
+  history:createWebHashHistory(),
   routes:[
     {path:'/login', component:()=>import('@/views/Login.vue')},
     {path:'/', component:()=>import('@/views/Layout.vue'), redirect:'/home', children:[
