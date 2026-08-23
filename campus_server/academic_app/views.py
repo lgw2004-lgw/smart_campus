@@ -225,12 +225,15 @@ class EnrollmentQueryByPageView(BaseView):
         return page_response(lst, total, page_no, page_size)
 
 class EnrollmentWorkNumView(BaseView):
-    """POST /enrollment/queryWorkNum 按院系/教师聚合选课人数"""
+    """POST /enrollment/queryWorkNum 按课程聚合选课人数，联表返回课程名（剔除无课程的脏数据）"""
     def post(self, request):
         from django.db.models import Count
-        data = self.parse_body(request)
-        qs = AcaEnrollment.objects.filter(status__in=['0','1']).values('course_id').annotate(cnt=Count('enroll_id'))
-        return success(list(qs))
+        valid_ids = AcaCourse.objects.values_list('course_id', flat=True)
+        rows = (AcaEnrollment.objects.filter(status__in=['0','1'], course_id__in=valid_ids)
+                .values('course_id').annotate(cnt=Count('enroll_id')).order_by('course_id'))
+        name_map = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
+        out = [{'courseId': r['course_id'], 'courseName': name_map.get(r['course_id']) or '未知课程', 'cnt': r['cnt']} for r in rows]
+        return success(out)
 
 # ---- 考试 ----
 class ExamQueryByPageView(BaseView):

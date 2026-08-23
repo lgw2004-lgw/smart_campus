@@ -13,13 +13,13 @@
     <el-row :gutter="16" style="margin-top:16px">
       <el-col :span="14">
         <el-card shadow="never" style="border-radius:12px">
-          <template #header><div style="font-weight:700">选课人数 · 按课程聚合（实时 /enrollment/queryWorkNum）</div></template>
+          <template #header><div style="font-weight:700">选课人数</div></template>
           <div ref="chartRef" style="height:280px"></div>
         </el-card>
       </el-col>
       <el-col :span="10">
         <el-card shadow="never" style="border-radius:12px">
-          <template #header><div style="font-weight:700">成绩分布 · /score/queryRank</div></template>
+          <template #header><div style="font-weight:700">成绩分布</div></template>
           <div ref="pieRef" style="height:280px"></div>
           <div v-if="rank" style="font-size:13px;color:#666;margin-top:8px">平均分 {{ rank.avg.toFixed(1) }} · 总数 {{ rank.total }}</div>
         </el-card>
@@ -29,7 +29,7 @@
     <el-row :gutter="16" style="margin-top:16px">
       <el-col :span="12">
         <el-card shadow="never" style="border-radius:12px">
-          <template #header><div style="font-weight:700">宿舍入住率 · /dorm/queryByPage 实时</div></template>
+          <template #header><div style="font-weight:700">宿舍入住率</div></template>
           <div v-for="r in dormStats" :key="r.room_id" style="display:flex;align-items:center;gap:10px;margin:8px 0">
             <div style="width:120px;font-size:13px">{{ r.building_id }}栋 {{ r.room_no }}</div>
             <el-progress :percentage="Math.round(r.occupied/r.capacity*100)" :stroke-width="10" style="flex:1" :color="r.occupied>=r.capacity?'#ff4d4f':'#1e5eff'"/>
@@ -39,7 +39,7 @@
       </el-col>
       <el-col :span="12">
         <el-card shadow="never" style="border-radius:12px">
-          <template #header><div style="font-weight:700">图书借阅排行 · /borrow/queryByPage</div></template>
+          <template #header><div style="font-weight:700">图书借阅排行</div></template>
           <div v-for="b in borrowTop" :key="b.book_id" style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f2f5">
             <span style="font-size:13px">{{ b.book_name }}</span><el-tag size="small" type="info">{{ b.stock }}/{{ b.total }} 可借</el-tag>
           </div>
@@ -55,10 +55,10 @@ import request from '@/utils/request'
 
 const loading=ref(false)
 const cards=reactive([
-  {title:'在校学生', value:'—', sub:'campus_academic.stu_student'},
-  {title:'今日选课(总)', value:'—', sub:'/enrollment/queryByPage'},
-  {title:'待缴费订单', value:'—', sub:'/feeOrder/queryByPage status=0'},
-  {title:'图书在借', value:'—', sub:'/borrow/queryByPage status=0'},
+  {title:'在校学生', value:'—', sub:'在读学生总数'},
+  {title:'今日选课(总)', value:'—', sub:'选课记录总数'},
+  {title:'待缴费订单', value:'—', sub:'未支付缴费单'},
+  {title:'图书在借', value:'—', sub:'未归还图书'},
 ])
 const chartRef=ref<HTMLDivElement>()
 const pieRef=ref<HTMLDivElement>()
@@ -87,12 +87,13 @@ async function load(){
     cards[3].value = String(borrowRes.data.total)
     rank.value = rankRes.data
 
-    // 选课柱状（显示课程名而非ID）
+    // 选课柱状（后端联表直接返回课程名）
     const work = workNumRes.data as any[]
     const chart = echarts.init(chartRef.value!)
     chart.setOption({
       tooltip:{trigger:'axis'},
-      xAxis:{type:'category', data: work.map(w=>courseMap[w.course_id]||w.course_id)},
+      grid:{bottom:60},
+      xAxis:{type:'category', data: work.map(w=>w.courseName), axisLabel:{interval:0, rotate:30}},
       yAxis:{type:'value'},
       series:[{type:'bar', data: work.map(w=>w.cnt), itemStyle:{color:'#1e5eff'}}]
     })

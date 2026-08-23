@@ -44,7 +44,7 @@ const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChang
 fetch()
 const deptOptions=ref<any[]>([])
 const deptMap=ref<Record<string,string>>({})
-async function loadDepts(){ const res:any=await request.post('/dept/queryByPage', {pageNo:1,pageSize:50,data:{}}); const lst=res.data.list||[]; deptOptions.value=lst; const m:Record<string,string>={}; for(const d of lst) m[d.dept_id]=d.dept_name; deptMap.value=m }
+async function loadDepts(){ const res:any=await request.post('/dept/queryByPage', {pageNo:1,pageSize:50,data:{}}); const lst=res.data.list||[]; deptOptions.value=lst.filter((d:any)=>d.parent_id===0); const m:Record<string,string>={}; for(const d of lst) m[d.dept_id]=d.dept_name; deptMap.value=m }
 onMounted(loadDepts)
 const dialog=ref(false)
 const form=reactive<any>({userId:'', userName:'', phone:'', password:'', deptId:'', userType:'0', status:'0'})

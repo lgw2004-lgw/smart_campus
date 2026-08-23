@@ -19,6 +19,13 @@ class UserQueryByPageView(BaseView):
             qs = qs.filter(user_name__icontains=data['userName'])
         if data.get('status'):
             qs = qs.filter(status=data['status'])
+        if data.get('userType') or data.get('user_type'):
+            qs = qs.filter(user_type=str(data.get('userType') or data.get('user_type')))
+        if data.get('deptId') or data.get('dept_id'):
+            try:
+                qs = qs.filter(dept_id=int(data.get('deptId') or data.get('dept_id')))
+            except:
+                pass
         total = qs.count()
         lst = list(qs.order_by('-create_time')[(page_no-1)*page_size: page_no*page_size].values())
         return page_response(lst, total, page_no, page_size)
