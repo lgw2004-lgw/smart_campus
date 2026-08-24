@@ -14,8 +14,8 @@
     <el-row :gutter="16" style="margin-top:14px">
       <el-col :span="9">
         <el-card shadow="never" style="border-radius:14px;border:1px solid #e6ebf5;min-height:520px">
-          <template #header><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700">组织树</span><el-button size="small" @click="loadTree">刷新</el-button></div></template>
-          <el-tree :data="tree" :props="{label:'dept_name', children:'children'}" default-expand-all @node-click="onNodeClick" class="dept-tree">
+          <template #header><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700">组织树</span><div style="display:flex;gap:6px"><el-button size="small" @click="expandAll">展开全部</el-button><el-button size="small" @click="collapseAll">收起全部</el-button><el-button size="small" @click="loadTree">刷新</el-button></div></div></template>
+          <el-tree ref="treeRef" :data="tree" :props="{label:'dept_name', children:'children'}" default-expand-all @node-click="onNodeClick" class="dept-tree">
             <template #default="{ data }">
               <div style="display:flex;align-items:center;gap:6px">
                 <el-tag size="small" :type="data.level===0?'warning':'success'" effect="plain">{{ data.levelLabel }}</el-tag>
@@ -73,8 +73,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChange, handleSizeChange, search } = usePage('/dept/queryByPage', {deptName:'', deptId:'', parentId:''})
 fetch()
 const tree=ref<any[]>([])
+const treeRef=ref<any>(null)
 const selectedDept=ref<any>(null)
 async function loadTree(){ const res:any=await request.get('/dept/tree'); tree.value=res.data||[] }
+function expandAll(){ const m=(treeRef.value as any)?.store?.nodesMap; if(m){ Object.values(m).forEach((n:any)=> n.expanded=true) } }
+function collapseAll(){ const m=(treeRef.value as any)?.store?.nodesMap; if(m){ Object.values(m).forEach((n:any)=> n.expanded=false) } }
 function onNodeClick(data:any){
   selectedDept.value=data
   // 点击树节点仅显示该节点自身信息，不含下级专业
