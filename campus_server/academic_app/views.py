@@ -5,6 +5,71 @@ from utils.gen_id import gen_id
 from .models import StuStudent, StuStudentFile, StuClass, AcaCourse, AcaScheduling, AcaEnrollment, AcaExam, AcaScore, AcaAttendance
 import json
 
+def _get_jwc_college(request):
+    """若当前登录为教务处，返回其所属学院dept_id，否则None（管理员看全部）"""
+    try:
+        from system_app.models import SysUser, SysDept, SysRole, SysRoleUser
+        user_id=None
+        user_type=None
+        # 从中间件注入的user_info取
+        info=getattr(request, 'user_info', None)
+        if info and isinstance(info, dict):
+            user_id=info.get('userId') or info.get('user_id')
+            user_type=str(info.get('user_type') or info.get('userType') or '')
+        # 尝试从token头解析
+        if not user_id:
+            token=request.META.get('HTTP_TOKEN') or request.headers.get('token') or ''
+            if token:
+                try:
+                    from utils.auth import decode_token
+                    payload=decode_token(token)
+                    user_id=payload.get('userId')
+                    user_type=str(payload.get('user_type') or payload.get('userType') or '')
+                except:
+                    pass
+        if not user_id:
+            return None
+        # 判断是否为教务处：user_type 6 或角色含教务
+        is_jwc=False
+        if str(user_type)=='6':
+            is_jwc=True
+        else:
+            try:
+                rids=list(SysRoleUser.objects.filter(user_id=user_id).values_list('role_id', flat=True))
+                if rids:
+                    for r in SysRole.objects.filter(role_id__in=rids):
+                        if '教务' in r.role_name:
+                            is_jwc=True
+                            break
+            except:
+                pass
+        if not is_jwc:
+            return None
+        # 取用户所属院系
+        try:
+            u=SysUser.objects.get(user_id=user_id)
+            if not u.dept_id:
+                return None
+            d=SysDept.objects.get(dept_id=u.dept_id)
+            college_id=d.dept_id if d.parent_id==0 else d.parent_id
+            return college_id
+        except:
+            return None
+    except:
+        return None
+
+def _allowed_dept_ids(college_id):
+    if not college_id:
+        return None
+    try:
+        from system_app.models import SysDept
+        ids=[college_id]
+        for d in SysDept.objects.filter(parent_id=college_id):
+            ids.append(d.dept_id)
+        return ids
+    except:
+        return [college_id]
+
 # ---- 学生建档 ----
 class StudentQueryByIdCardView(BaseView):
     def get(self, request):
@@ -95,6 +160,12 @@ class StudentQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = StuStudent.objects.all()
+        # 教务处仅看本学院
+        college=_get_jwc_college(request)
+        if college:
+            allowed=_allowed_dept_ids(college)
+            if allowed is not None:
+                qs=qs.filter(dept_id__in=allowed)
         if data.get('name'):
             qs = qs.filter(name__icontains=data['name'])
         if data.get('deptId'):
@@ -138,6 +209,11 @@ class CourseQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = AcaCourse.objects.all()
+        college=_get_jwc_college(request)
+        if college:
+            allowed=_allowed_dept_ids(college)
+            if allowed is not None:
+                qs=qs.filter(dept_id__in=allowed)
         if data.get('courseName'):
             qs = qs.filter(course_name__icontains=data['courseName'])
         if data.get('status'):
@@ -198,6 +274,12 @@ class SchedulingSelectView(BaseView):
     def post(self, request):
         body = self.parse_body(request)
         qs = AcaScheduling.objects.all()
+        college=_get_jwc_college(request)
+        if college:
+            allowed=_allowed_dept_ids(college)
+            if allowed is not None:
+                allowed_courses=list(AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True))
+                qs=qs.filter(course_id__in=allowed_courses)
         if body.get('courseId'):
             qs = qs.filter(course_id=body['courseId'])
         if body.get('teacherId'):
@@ -320,6 +402,12 @@ class EnrollmentQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = AcaEnrollment.objects.all()
+        college=_get_jwc_college(request)
+        if college:
+            allowed=_allowed_dept_ids(college)
+            if allowed is not None:
+                allowed_courses=list(AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True))
+                qs=qs.filter(course_id__in=allowed_courses)
         if data.get('studentId'):
             qs = qs.filter(student_id=data['studentId'])
         if data.get('courseId'):
@@ -335,9 +423,18 @@ class EnrollmentWorkNumView(BaseView):
     def post(self, request):
         from django.db.models import Count
         valid_ids = AcaCourse.objects.values_list('course_id', flat=True)
+        college=_get_jwc_college(request)
+        if college:
+            allowed=_allowed_dept_ids(college)
+            if allowed is not None:
+                valid_ids = AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True)
         rows = (AcaEnrollment.objects.filter(status__in=['0','1'], course_id__in=valid_ids)
                 .values('course_id').annotate(cnt=Count('enroll_id')).order_by('course_id'))
-        name_map = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
+        # name_map按学院过滤
+        if college and allowed is not None:
+            name_map = {c.course_id: c.course_name for c in AcaCourse.objects.filter(dept_id__in=allowed)}
+        else:
+            name_map = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
         out = [{'courseId': r['course_id'], 'courseName': name_map.get(r['course_id']) or '未知课程', 'cnt': r['cnt']} for r in rows]
         return success(out)
 
@@ -346,6 +443,12 @@ class ExamQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = AcaExam.objects.all()
+        college=_get_jwc_college(request)
+        if college:
+            allowed=_allowed_dept_ids(college)
+            if allowed is not None:
+                allowed_courses=list(AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True))
+                qs=qs.filter(course_id__in=allowed_courses)
         if data.get('courseId'):
             qs = qs.filter(course_id=data['courseId'])
         total = qs.count()
@@ -435,6 +538,12 @@ class ScoreQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = AcaScore.objects.all()
+        college=_get_jwc_college(request)
+        if college:
+            allowed=_allowed_dept_ids(college)
+            if allowed is not None:
+                allowed_courses=list(AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True))
+                qs=qs.filter(course_id__in=allowed_courses)
         if data.get('studentId'):
             qs = qs.filter(student_id=data['studentId'])
         if data.get('courseId'):
@@ -461,6 +570,11 @@ class ClassQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = StuClass.objects.all()
+        college=_get_jwc_college(request)
+        if college:
+            allowed=_allowed_dept_ids(college)
+            if allowed is not None:
+                qs=qs.filter(dept_id__in=allowed)
         if data.get('className'):
             qs = qs.filter(class_name__icontains=data['className'])
         total = qs.count()

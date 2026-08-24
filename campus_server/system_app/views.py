@@ -15,6 +15,11 @@ class UserQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = SysUser.objects.filter(del_flag='0')
+        # 教务处仅看本学院用户（本学院+下属专业），超级管理员看全部
+        college=_get_jwc_college_sys(request)
+        if college:
+            allowed=_allowed_dept_ids_view(college)
+            qs=qs.filter(dept_id__in=allowed)
         if data.get('userName'):
             qs = qs.filter(user_name__icontains=data['userName'])
         if data.get('status'):
@@ -297,6 +302,11 @@ class DeptQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = SysDept.objects.all()
+        college=_get_jwc_college_sys(request)
+        if college:
+            qs=qs.filter(dept_id=college) | qs.filter(parent_id=college)
+            # 去重
+            qs=qs.distinct()
         if data.get('deptName'):
             qs = qs.filter(dept_name__icontains=data['deptName'])
         if data.get('deptId'):
@@ -349,10 +359,58 @@ class DeptDeleteView(BaseView):
         SysDept.objects.filter(dept_id=did).delete()
         return success()
 
+def _get_jwc_college_sys(request):
+    try:
+        from .models import SysUser, SysDept, SysRole, SysRoleUser
+        user_id=None; user_type=None
+        info=getattr(request,'user_info',None)
+        if info and isinstance(info, dict):
+            user_id=info.get('userId') or info.get('user_id')
+            user_type=str(info.get('user_type') or info.get('userType') or '')
+        if not user_id:
+            token=request.META.get('HTTP_TOKEN') or request.headers.get('token') or ''
+            if token:
+                try:
+                    from utils.auth import decode_token
+                    payload=decode_token(token)
+                    user_id=payload.get('userId'); user_type=str(payload.get('user_type') or '')
+                except: pass
+        if not user_id: return None
+        is_jwc=False
+        if str(user_type)=='6': is_jwc=True
+        else:
+            try:
+                rids=list(SysRoleUser.objects.filter(user_id=user_id).values_list('role_id', flat=True))
+                for r in SysRole.objects.filter(role_id__in=rids):
+                    if '教务' in r.role_name: is_jwc=True; break
+            except: pass
+        if not is_jwc: return None
+        u=SysUser.objects.get(user_id=user_id)
+        if not u.dept_id: return None
+        d=SysDept.objects.get(dept_id=u.dept_id)
+        return d.dept_id if d.parent_id==0 else d.parent_id
+    except:
+        return None
+
+def _allowed_dept_ids_view(college_id):
+    if not college_id:
+        return None
+    try:
+        ids=[college_id]
+        for d in SysDept.objects.filter(parent_id=college_id):
+            ids.append(d.dept_id)
+        return ids
+    except:
+        return [college_id]
+
 class DeptTreeView(BaseView):
     def get(self, request):
-        # 返回 学院-专业 二级树（单校，已去掉学校层）
+        # 返回 学院-专业 二级树（单校，已去掉学校层）— 教务处仅看本学院
+        college=_get_jwc_college_sys(request)
         depts = list(SysDept.objects.all().order_by('order_num').values())
+        if college:
+            # 仅保留本学院及下属专业
+            depts=[d for d in depts if d['dept_id']==college or d['parent_id']==college]
         def build(pid):
             res=[]
             for d in [x for x in depts if x['parent_id']==pid]:

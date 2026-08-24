@@ -34,8 +34,8 @@ class UserAuthLoginView(BaseView):
             SysLoginInfo.objects.create(user_name=user_name, login_account=user.phone or '', ip_addr=request.META.get('REMOTE_ADDR',''), login_status='1', login_time=datetime.datetime.now())
             return error("密码错误", code=401)
         SysLoginInfo.objects.create(user_name=user_name, login_account=user.phone or '', ip_addr=request.META.get('REMOTE_ADDR',''), login_status='0', login_time=datetime.datetime.now())
-        token = gen_token({"userId": user.user_id, "userName": user.user_name, "userType": "admin", "user_type": user.user_type})
-        return success({"token": token, "userId": user.user_id, "userName": user.user_name, "userType": user.user_type})
+        token = gen_token({"userId": user.user_id, "userName": user.user_name, "userType": "admin", "user_type": user.user_type, "workNo": user.work_no or '', "deptId": user.dept_id or ''})
+        return success({"token": token, "userId": user.user_id, "userName": user.user_name, "userType": user.user_type, "workNo": user.work_no or '', "deptId": user.dept_id or ''})
 
 
 class MemberAuthLoginView(BaseView):
