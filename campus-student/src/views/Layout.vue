@@ -10,7 +10,7 @@
             <div class="logo-sub">Smart Campus Student Portal</div>
           </div>
         </div>
-        <div class="semester-tag">2024-2025学年 · 春季学期</div>
+        <div class="semester-tag">{{ semesterLabel }}</div>
       </div>
       <div class="header-right">
         <el-badge :value="3" class="bell"><el-icon :size="20"><Bell /></el-icon></el-badge>
@@ -59,10 +59,26 @@
   </div>
 </template>
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
+import request from '@/utils/request'
 const auth=useAuthStore(); const router=useRouter()
 function onCmd(c:string){ if(c==='logout'){ auth.logout(); router.push('/login') } }
+const semesterLabel=ref('2024-2025学年 · 春季学期')
+function formatSemester(s:string){
+  // 2025-2026-1 -> 2025-2026学年 · 秋季学期, 2025-2026-2 -> 春季
+  if(!s) return semesterLabel.value
+  const parts=s.split('-')
+  if(parts.length===3){ const year=`${parts[0]}-${parts[1]}`; const term=parts[2]==='1'?'秋季学期':parts[2]==='2'?'春季学期':`第${parts[2]}学期`; return `${year}学年 · ${term}` }
+  return s
+}
+onMounted(async()=>{
+  try{
+    const res:any=await request.get('/fee/tuition/get')
+    if(res?.data?.semester) semesterLabel.value=formatSemester(res.data.semester)
+  }catch{ /* 保持默认 */ }
+})
 </script>
 <style scoped>
 .student-root{height:100vh;background:#f0f5ff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial}
