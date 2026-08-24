@@ -36,9 +36,18 @@
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="submit">保存</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="fileDialog" title="档案（家庭/健康/奖惩）" width="620">
+    <el-dialog v-model="fileDialog" title="档案（家庭/健康/奖惩）" width="680">
       <el-form :model="fileForm" label-width="100px">
-        <el-form-item label="家庭信息"><el-input type="textarea" v-model="fileForm.familyInfo" :rows="2"/></el-form-item>
+        <el-form-item label="家庭信息">
+          <div style="width:100%">
+            <div v-for="(m, idx) in fileForm.familyMembers" :key="idx" style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+              <el-input v-model="m.member" placeholder="家庭成员：如 张父" style="flex:1"/>
+              <el-input v-model="m.relation" placeholder="关系：如 父子" style="flex:1"/>
+              <el-button size="small" type="danger" @click="removeFamilyMember(idx)" :disabled="fileForm.familyMembers.length===1">删除</el-button>
+            </div>
+            <el-button size="small" type="primary" plain @click="addFamilyMember">+ 添加家庭成员</el-button>
+          </div>
+        </el-form-item>
         <el-form-item label="健康信息"><el-input type="textarea" v-model="fileForm.healthInfo" :rows="2"/></el-form-item>
         <el-form-item label="奖惩"><el-input type="textarea" v-model="fileForm.awardPunish" :rows="2"/></el-form-item>
         <el-form-item label="备注"><el-input v-model="fileForm.remark"/></el-form-item>
@@ -135,16 +144,31 @@ function onIdCardBlur(){ if(form.idCard && form.idCard.length===18) checkIdCardB
 
 // 档案
 const fileDialog=ref(false)
-const fileForm=reactive<any>({studentId:'', familyInfo:'', healthInfo:'', awardPunish:'', remark:'', emergencyContact:''})
+const fileForm=reactive<any>({studentId:'', familyMembers:[{member:'', relation:''}], healthInfo:'', awardPunish:'', remark:'', emergencyContact:''})
 let curStuId=''
+function addFamilyMember(){ fileForm.familyMembers.push({member:'', relation:''}) }
+function removeFamilyMember(idx:number){ if(fileForm.familyMembers.length>1) fileForm.familyMembers.splice(idx,1) }
+function parseFamilyInfo(raw:string){
+  if(!raw) return [{member:'', relation:''}]
+  try{
+    const arr=JSON.parse(raw)
+    if(Array.isArray(arr) && arr.length) return arr.map((x:any)=> ({member: x.member||x.name||'', relation: x.relation||''}))
+  }catch{}
+  // 旧文本：整段作为一个成员名
+  return [{member: raw, relation:''}]
+}
 async function openFile(row:any){
   curStuId=row.student_id
   const res:any = await request.get(`/studentFile/queryById/${curStuId}`)
   const d=res.data||{}
-  fileForm.studentId=curStuId; fileForm.familyInfo=d.family_info||''; fileForm.healthInfo=d.health_info||''; fileForm.awardPunish=d.award_punish||''; fileForm.remark=d.remark||''; fileForm.emergencyContact=d.emergency_contact||''; fileDialog.value=true
+  fileForm.studentId=curStuId
+  fileForm.familyMembers=parseFamilyInfo(d.family_info||'')
+  fileForm.healthInfo=d.health_info||''; fileForm.awardPunish=d.award_punish||''; fileForm.remark=d.remark||''; fileForm.emergencyContact=d.emergency_contact||''; fileDialog.value=true
 }
 async function saveFile(){
-  await request.put('/studentFile/add', {studentId:curStuId, familyInfo:fileForm.familyInfo, healthInfo:fileForm.healthInfo, awardPunish:fileForm.awardPunish, remark:fileForm.remark, emergencyContact:fileForm.emergencyContact})
+  const clean=fileForm.familyMembers.filter((m:any)=> m.member.trim()||m.relation.trim())
+  const familyInfo = clean.length? JSON.stringify(clean) : ''
+  await request.put('/studentFile/add', {studentId:curStuId, familyInfo, healthInfo:fileForm.healthInfo, awardPunish:fileForm.awardPunish, remark:fileForm.remark, emergencyContact:fileForm.emergencyContact})
   ElMessage.success('档案已保存'); fileDialog.value=false
 }
 </script>

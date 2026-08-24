@@ -17,7 +17,12 @@
         </el-descriptions>
         <el-divider>档案信息</el-divider>
         <el-descriptions :column="1" border>
-          <el-descriptions-item label="家庭信息">{{ data.family_info || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="家庭信息">
+            <div v-if="familyList.length">
+              <div v-for="(m,i) in familyList" :key="i">家庭成员：{{ m.member || '-' }}，关系：{{ m.relation || '-' }}</div>
+            </div>
+            <span v-else>-</span>
+          </el-descriptions-item>
           <el-descriptions-item label="健康信息">{{ data.health_info || '-' }}</el-descriptions-item>
           <el-descriptions-item label="奖惩">{{ data.award_punish || '-' }}</el-descriptions-item>
           <el-descriptions-item label="备注">{{ data.remark || '-' }}</el-descriptions-item>
@@ -28,12 +33,21 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import request from '@/utils/request'
 import { useAuthStore } from '@/stores/auth'
 const auth=useAuthStore()
 const loading=ref(false)
 const data=ref<any>({})
+const familyList=computed(()=>{
+  const raw=data.value.family_info
+  if(!raw) return []
+  try{
+    const arr=JSON.parse(raw)
+    if(Array.isArray(arr)) return arr.filter((x:any)=> x.member||x.relation)
+  }catch{}
+  return raw? [{member: raw, relation:''}] : []
+})
 async function load(){
   loading.value=true
   try{
