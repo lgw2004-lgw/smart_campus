@@ -35,10 +35,86 @@ class UserInsertOrUpdateView(BaseView):
         body = self.parse_body(request)
         user_id = body.get('userId') or body.get('user_id')
         work_no = body.get('workNo') or body.get('work_no')
+        user_type = str(body.get('userType') or body.get('user_type') or '')
+        dept_id_raw = body.get('deptId') or body.get('dept_id')
+        try:
+            dept_id_int = int(dept_id_raw) if dept_id_raw not in (None, '', 0, '0') else None
+        except:
+            dept_id_int=None
+
+        def is_super_admin(ut):
+            # 超级管理员 role_id 1 定死 0
+            if str(ut)=='1':
+                return True
+            try:
+                r=SysRole.objects.filter(role_id=int(ut)).first()
+                if r and r.role_code=='role:admin':
+                    return True
+            except: pass
+            return False
+        def is_jwc(ut):
+            if str(ut)=='6':
+                return True
+            try:
+                r=SysRole.objects.filter(role_id=int(ut)).first()
+                if r and '教务' in r.role_name:
+                    return True
+            except: pass
+            return False
+        def gen_work_no(ut, dept_id):
+            if is_super_admin(ut):
+                return '0'
+            if is_jwc(ut):
+                # 4位顺序 0001...
+                max_no=None
+                for u in SysUser.objects.exclude(work_no__isnull=True).exclude(work_no='0'):
+                    if u.work_no and len(u.work_no)==4 and u.work_no.isdigit():
+                        if max_no is None or int(u.work_no)>int(max_no):
+                            max_no=u.work_no
+                nxt = int(max_no)+1 if max_no else 1
+                return f"{nxt:04d}"
+            # 其他：学院+00001
+            # 解析所属学院
+            college_id=None
+            if dept_id:
+                try:
+                    d=SysDept.objects.get(dept_id=dept_id)
+                    college_id=d.dept_id if d.parent_id==0 else d.parent_id
+                except:
+                    college_id=dept_id
+            if not college_id:
+                # 无学院则按教务处逻辑兜底
+                return gen_work_no('6', None)
+            prefix=f"{int(college_id):04d}"
+            max_seq=0
+            for u in SysUser.objects.filter(work_no__startswith=prefix):
+                suffix=u.work_no[4:]
+                if len(suffix)==5 and suffix.isdigit():
+                    v=int(suffix)
+                    if v>max_seq: max_seq=v
+            return f"{prefix}{(max_seq+1):05d}"
+
         if user_id:
-            # 工号唯一校验
-            if work_no and SysUser.objects.filter(work_no=work_no).exclude(user_id=user_id).exists():
-                return error("工号已存在", code=400)
+            # 超级管理员工号不可改
+            existing=SysUser.objects.filter(user_id=user_id).first()
+            if existing and is_super_admin(existing.user_type):
+                work_no='0'
+            elif not work_no:
+                # 编辑时若未传则保持原值
+                work_no=None
+            else:
+                # 若传了则校验唯一
+                if SysUser.objects.filter(work_no=work_no).exclude(user_id=user_id).exists():
+                    return error("工号已存在", code=400)
+                # 若为空则自动生成
+                if not work_no:
+                    work_no=gen_work_no(user_type or (existing.user_type if existing else ''), dept_id_int)
+            # 若仍无则自动生成
+            if work_no is None and existing:
+                # 保留原
+                pass
+            elif work_no is None:
+                work_no=gen_work_no(user_type, dept_id_int)
             upd={}
             if body.get('userName') is not None or body.get('user_name') is not None:
                 upd['user_name']=body.get('userName', body.get('user_name'))
@@ -46,20 +122,27 @@ class UserInsertOrUpdateView(BaseView):
                 upd['work_no']=work_no
             if body.get('phone') is not None:
                 upd['phone']=body.get('phone')
-            if body.get('deptId') is not None or body.get('dept_id') is not None:
-                upd['dept_id']=body.get('deptId') or body.get('dept_id')
+            if dept_id_raw is not None:
+                upd['dept_id']=dept_id_int
             if body.get('status') is not None:
                 upd['status']=body.get('status')
             if body.get('userType') is not None or body.get('user_type') is not None:
-                upd['user_type']=body.get('userType') or body.get('user_type')
+                upd['user_type']=user_type
             if upd:
                 SysUser.objects.filter(user_id=user_id).update(**upd)
             if body.get('password'):
                 u = SysUser.objects.get(user_id=user_id)
                 u.password = hash_password(body['password'])
                 u.save(update_fields=['password'])
-            return success({"userId": user_id})
+            return success({"userId": user_id, "workNo": work_no or existing.work_no if 'existing' in locals() and existing else work_no})
         # 新增
+        # 超级管理员定死0
+        if is_super_admin(user_type):
+            work_no='0'
+            if SysUser.objects.filter(work_no='0').exists():
+                return error("超级管理员已存在，工号0不可重复", code=400)
+        elif not work_no:
+            work_no=gen_work_no(user_type, dept_id_int)
         if work_no and SysUser.objects.filter(work_no=work_no).exists():
             return error("工号已存在", code=400)
         pwd = body.get('password') or '123456'
@@ -68,15 +151,11 @@ class UserInsertOrUpdateView(BaseView):
             user_name=body['userName'],
             work_no=work_no,
             phone=body.get('phone'),
-            dept_id=body.get('deptId'),
-            user_type=body.get('userType','0'),
+            dept_id=dept_id_int,
+            user_type=user_type or '0',
             password=hashed,
             status=body.get('status','0'),
         )
-        # 若未传工号自动生成 GH+id
-        if not u.work_no:
-            u.work_no=f"GH{u.user_id:04d}"
-            u.save(update_fields=['work_no'])
         return success({"userId": u.user_id, "workNo": u.work_no})
 
 class UserSaveView(BaseView):

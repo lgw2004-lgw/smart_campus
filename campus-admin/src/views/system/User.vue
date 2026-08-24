@@ -18,7 +18,10 @@
 
     <el-dialog v-model="dialog" :title="form.userId?'编辑用户':'新增用户'" width="520">
       <el-form :model="form" label-width="80px">
-        <el-form-item label="工号"><el-input v-model="form.workNo" placeholder="如 ADM001，留空自动生成 GHxxxx"/></el-form-item>
+        <el-form-item label="工号">
+          <el-input v-model="form.workNo" :disabled="isSuperAdmin" :placeholder="isSuperAdmin?'0（超级管理员定死）': form.userType==='6'?'自动生成 0001…' : '自动生成 学院0001+序号00001，如 000100001'"/>
+          <div v-if="!isSuperAdmin" style="font-size:12px;color:#8a94a6;margin-top:4px">留空则按“{{ workNoRuleTip }}”自动生成</div>
+        </el-form-item>
         <el-form-item label="用户名"><el-input v-model="form.userName"/></el-form-item>
         <el-form-item label="手机"><el-input v-model="form.phone"/></el-form-item>
         <el-form-item label="密码"><el-input v-model="form.password" placeholder="留空不改，默认123456" show-password/></el-form-item>
@@ -38,7 +41,7 @@
   </el-card>
 </template>
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
@@ -76,7 +79,20 @@ async function loadTypeOptions(){
 onMounted(()=>{ loadDepts(); loadTypeOptions() })
 const dialog=ref(false)
 const form=reactive<any>({userId:'', workNo:'', userName:'', phone:'', password:'', deptId:'', userType:'0', status:'0'})
-function openEdit(row?:any){ if(row){ form.userId=row.user_id; form.workNo=row.work_no||''; form.userName=row.user_name; form.phone=row.phone; form.password=''; form.deptId=row.dept_id; form.userType=row.user_type; form.status=row.status } else { form.userId=''; form.workNo=''; form.userName=''; form.phone=''; form.password=''; form.deptId=''; form.userType='0'; form.status='0' } dialog.value=true }
+const isSuperAdmin=computed(()=> String(form.userType)==='1')
+const workNoRuleTip=computed(()=>{
+  if(isSuperAdmin.value) return '超级管理员 0'
+  if(String(form.userType)==='6') return '教务处 0001、0002…'
+  const cid=form.deptId? String(form.deptId).padStart(4,'0') : '学院0001'
+  return `${cid}+00001 如 000100001`
+})
+watch(()=> form.userType, (v)=>{ if(String(v)==='1') form.workNo='0' })
+function openEdit(row?:any){
+  if(row){
+    form.userId=row.user_id; form.workNo=row.work_no||''; form.userName=row.user_name; form.phone=row.phone; form.password=''; form.deptId=row.dept_id; form.userType=row.user_type; form.status=row.status
+    if(isSuperAdmin.value) form.workNo='0'
+  } else { form.userId=''; form.workNo=''; form.userName=''; form.phone=''; form.password=''; form.deptId=''; form.userType='0'; form.status='0' } dialog.value=true
+}
 async function submit(){ await request.post('/user/insertOrUpdate', {userId:form.userId||undefined, workNo:form.workNo||undefined, userName:form.userName, phone:form.phone, password:form.password||undefined, deptId:form.deptId?Number(form.deptId):null, userType:form.userType, status:form.status}); ElMessage.success('保存成功'); dialog.value=false; fetch() }
 async function del(row:any){ await request.post(`/user/delete/${row.user_id}`); ElMessage.success('已停用'); fetch() }
 const roleDialog=ref(false); const roles=ref<any[]>([]); const roleIds=ref<number[]>([]); let curUserId:any=null
