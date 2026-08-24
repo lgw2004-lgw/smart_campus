@@ -62,7 +62,7 @@ async function loadWeek(){
   try{
     const start=format(weekStart.value); const end=new Date(weekStart.value); end.setDate(weekStart.value.getDate()+6); const endStr=format(end)
     const res:any = await request.post('/scheduling/selectWithConditions', {})
-    const list=res.data||[]
+    const list=res?.data ?? []
     const m:Record<string,any>={}
     for(const r of list){
       if(r.scheduling_day>=start && r.scheduling_day<=endStr){
@@ -82,7 +82,7 @@ function openEdit(row:any|null, date:string, section:string){
 async function submit(){
   if(!form.courseId||!form.teacherId||!form.classroomId) return ElMessage.warning('课程/教师/教室必填')
   if(form.id){
-    await request.post('/scheduling/update', {id:form.id, course_id:form.courseId, teacher_id:Number(form.teacherId), classroom_id:Number(form.classroomId), scheduling_day:form.schedulingDay, section_type:form.sectionType, scheduling_type:form.schedulingType})
+    await request.post('/scheduling/update', {id:form.id, courseId:form.courseId, teacherId:Number(form.teacherId), classroomId:Number(form.classroomId), schedulingDay:form.schedulingDay, sectionType:form.sectionType, schedulingType:form.schedulingType})
   }else{
     await request.post('/scheduling/add', {courseId:form.courseId, teacherId:Number(form.teacherId), classroomId:Number(form.classroomId), schedulingDay:form.schedulingDay, sectionType:form.sectionType, schedulingType:form.schedulingType})
   }

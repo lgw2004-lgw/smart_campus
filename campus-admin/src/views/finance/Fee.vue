@@ -58,7 +58,7 @@
   </el-card>
 </template>
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onUnmounted } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
@@ -66,15 +66,16 @@ const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChang
 fetch()
 const calcForm=reactive<any>({studentId:'20240101', enrollIdsStr:''})
 const calcData=ref<any>(null)
-async function doCalc(){ const ids=calcForm.enrollIdsStr.split(',').map((s:string)=>s.trim()).filter(Boolean); if(!ids.length) return ElMessage.warning('填选课ID'); const res:any = await request.post('/fee/calc', {enrollIds:ids}); calcData.value=res.data; ElMessage.success('计费完成') }
-async function doPayMsg(){ const ids=calcForm.enrollIdsStr.split(',').map((s:string)=>s.trim()).filter(Boolean); const res:any = await request.post('/fee/payMsg', {studentId:calcForm.studentId, enrollIds:ids}); ElMessage.success(`订单 ${res.data.orderId} 已生成`); payForm.orderId=res.data.orderId; refundForm.orderId=res.data.orderId; fetch() }
+async function doCalc(){ const ids=calcForm.enrollIdsStr.split(',').map((s:string)=>s.trim()).filter(Boolean); if(!ids.length) return ElMessage.warning('填选课ID'); const res:any = await request.post('/fee/calc', {enrollIds:ids}); calcData.value=res?.data ?? null; if(!calcData.value) return ElMessage.error('计费失败'); ElMessage.success('计费完成') }
+async function doPayMsg(){ const ids=calcForm.enrollIdsStr.split(',').map((s:string)=>s.trim()).filter(Boolean); const res:any = await request.post('/fee/payMsg', {studentId:calcForm.studentId, enrollIds:ids}); const oid=res?.data?.orderId ?? res?.data?.order_id; if(!oid) return ElMessage.error('订单生成失败'); ElMessage.success(`订单 ${oid} 已生成`); payForm.orderId=oid; refundForm.orderId=oid; fetch() }
 
 const payForm=reactive<any>({orderId:''})
 const qrData=ref<any>(null); const payStatus=ref('')
-async function getQR(){ if(!payForm.orderId) return ElMessage.warning('填订单号'); const res:any = await request.post(`/weChatPay/getNativeCodeUrl/${payForm.orderId}`); qrData.value=res.data; ElMessage.success('二维码已生成'); pollStatus() }
+async function getQR(){ if(!payForm.orderId) return ElMessage.warning('填订单号'); const res:any = await request.post(`/weChatPay/getNativeCodeUrl/${payForm.orderId}`); qrData.value=res?.data ?? null; if(!qrData.value) return ElMessage.error('二维码生成失败'); ElMessage.success('二维码已生成'); pollStatus() }
 async function getQRById(id:string){ payForm.orderId=id; await getQR() }
 let timer:any=null
-async function pollStatus(){ if(!payForm.orderId) return; const res:any = await request.get(`/weChatPay/getPayStatus/${payForm.orderId}`); payStatus.value=res.data.orderStatus; if(payStatus.value!=='3'){ clearTimeout(timer); timer=setTimeout(pollStatus,1500); ElMessage.info('轮询中...未付') } else { ElMessage.success('已支付') } }
+async function pollStatus(){ if(!payForm.orderId) return; const res:any = await request.get(`/weChatPay/getPayStatus/${payForm.orderId}`); payStatus.value=res?.data?.orderStatus ?? res?.data?.order_status ?? ''; if(payStatus.value!=='3'){ clearTimeout(timer); timer=setTimeout(pollStatus,1500); ElMessage.info('轮询中...未付') } else { ElMessage.success('已支付') } }
+onUnmounted(()=> clearTimeout(timer))
 async function confirmPay(){ await request.post(`/feeOrder/updateById/${payForm.orderId}`); ElMessage.success('已确认支付，选课已生效'); payStatus.value='3'; fetch() }
 
 const refundForm=reactive<any>({orderId:'', amount:'', reason:''})

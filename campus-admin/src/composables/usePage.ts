@@ -13,9 +13,9 @@ export function usePage(url: string, defaultQuery: any = {}) {
     loading.value = true
     try {
       const res: any = await request.post(url, { pageNo: pageNo.value, pageSize: pageSize.value, data: query })
-      const data = res.data
-      list.value = data.list || []
-      total.value = data.total || 0
+      const data = res?.data ?? {}
+      list.value = (data as any)?.list ?? []
+      total.value = (data as any)?.total ?? 0
     } finally {
       loading.value = false
     }

@@ -21,7 +21,7 @@
         <el-card shadow="never" style="border-radius:12px">
           <template #header><div style="font-weight:700">成绩分布</div></template>
           <div ref="pieRef" style="height:280px"></div>
-          <div v-if="rank" style="font-size:13px;color:#666;margin-top:8px">平均分 {{ rank.avg.toFixed(1) }} · 总数 {{ rank.total }}</div>
+          <div v-if="rank" style="font-size:13px;color:#666;margin-top:8px">平均分 {{ (rank.avg ?? 0).toFixed(1) }} · 总数 {{ rank.total ?? 0 }}</div>
         </el-card>
       </el-col>
     </el-row>
@@ -80,34 +80,34 @@ async function load(){
       request.post('/book/queryByPage', {pageNo:1,pageSize:5,data:{}}),
       request.post('/course/queryByPage', {pageNo:1,pageSize:200,data:{}}),
     ])
-    const courseMap:Record<string,string>={}; for(const c of (courseRes.data.list||[])) courseMap[c.course_id]=c.course_name
-    cards[0].value = String(stuRes.data.total)
-    cards[1].value = String(enrollRes.data.total)
-    cards[2].value = String(feeRes.data.total)
-    cards[3].value = String(borrowRes.data.total)
-    rank.value = rankRes.data
+    const courseMap:Record<string,string>={}; for(const c of (courseRes?.data?.list ?? [])) courseMap[c.course_id]=c.course_name
+    cards[0].value = String(stuRes?.data?.total ?? 0)
+    cards[1].value = String(enrollRes?.data?.total ?? 0)
+    cards[2].value = String(feeRes?.data?.total ?? 0)
+    cards[3].value = String(borrowRes?.data?.total ?? 0)
+    rank.value = rankRes?.data ?? null
 
-    // 选课柱状（后端联表直接返回课程名）
-    const work = workNumRes.data as any[]
+    // 选课柱状（后端联表直接返回课程名，五星级白屏兜底）
+    const work = (workNumRes?.data ?? []) as any[]
     const chart = echarts.init(chartRef.value!)
     chart.setOption({
       tooltip:{trigger:'axis'},
       grid:{bottom:60},
-      xAxis:{type:'category', data: work.map(w=>w.courseName), axisLabel:{interval:0, rotate:30}},
+      xAxis:{type:'category', data: work.map((w:any)=>w.courseName ?? w.course_name ?? '未知课程'), axisLabel:{interval:0, rotate:30}},
       yAxis:{type:'value'},
-      series:[{type:'bar', data: work.map(w=>w.cnt), itemStyle:{color:'#1e5eff'}}]
+      series:[{type:'bar', data: work.map((w:any)=>w.cnt ?? 0), itemStyle:{color:'#1e5eff'}}]
     })
 
     // 成绩饼图
     const pie = echarts.init(pieRef.value!)
-    const buckets = rankRes.data.buckets || {}
+    const buckets = rankRes?.data?.buckets ?? {}
     pie.setOption({
       tooltip:{trigger:'item'},
       series:[{type:'pie', radius:'60%', data: Object.entries(buckets).map(([k,v])=>({name:k, value:v})), label:{formatter:'{b}: {c}'} }]
     })
 
-    dormStats.value = dormRes.data.list || []
-    borrowTop.value = bookRes.data.list || []
+    dormStats.value = dormRes?.data?.list ?? []
+    borrowTop.value = bookRes?.data?.list ?? []
   } finally{ loading.value=false }
 }
 onMounted(load)

@@ -101,9 +101,24 @@ class AcaScore(models.Model):
     score = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     gpa_point = models.DecimalField(max_digits=3, decimal_places=2, null=True)
     semester = models.CharField(max_length=20, null=True)
+    exam_type = models.CharField(max_length=1, default='0', help_text='0正常 1补考 2重修')
+    is_retake = models.CharField(max_length=1, default='0', help_text='0首考 1补考/重修')
     create_time = models.DateTimeField(auto_now_add=True)
+    update_time = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
         db_table = 'aca_score'
         managed = False
-        unique_together = (('student_id','course_id','semester'),)
+        unique_together = (('student_id','course_id','semester','exam_type'),)
+
+class AcaAttendance(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    student_id = models.CharField(max_length=20)
+    course_id = models.CharField(max_length=20, null=True)
+    schedule_id = models.BigIntegerField(null=True)
+    attend_status = models.CharField(max_length=1, default='1', help_text='1到课 0缺勤')
+    create_time = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'aca_attendance'
+        managed = False

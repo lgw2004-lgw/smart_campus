@@ -1,11 +1,12 @@
 from django.urls import path
 from .views import (
-    StudentQueryByIdCardView, StudentAddView, StudentQueryByPageView, StudentFileAddView, StudentFileQueryView, StudentDeleteView,
+    StudentQueryByIdCardView, StudentAddView, StudentQueryByPageView, StudentFileAddView, StudentFileQueryView, StudentDeleteView, StudentArchiveView,
     CourseQueryByPageView, CourseSaveView, CourseDeleteView, CourseSelectableView,
     SchedulingSelectView, SchedulingAddView, SchedulingUpdateView, SchedulingDeleteView,
     EnrollmentAddView, EnrollmentCancelView, EnrollmentUpdateView, EnrollmentQueryByPageView, EnrollmentWorkNumView,
     ExamQueryByPageView, ExamAddView,
     ScoreAddView, ScoreImportView, ScoreQueryByPageView, ScoreRankView, ScoreDeleteView,
+    AttendanceMarkView, AttendanceQueryView,
     ClassQueryByPageView, ClassSaveView, ClassDeleteView
 )
 
@@ -15,6 +16,7 @@ urlpatterns = [
     path('student/queryByPage', StudentQueryByPageView.as_view()),
     path('student/delete/<str:student_id>', StudentDeleteView.as_view()),
     path('student/delete', StudentDeleteView.as_view()),
+    path('student/archive', StudentArchiveView.as_view()),
     path('studentFile/add', StudentFileAddView.as_view()),
     path('studentFile/queryById/<str:stu_id>', StudentFileQueryView.as_view()),
     path('studentFile/queryByIdCard', StudentQueryByIdCardView.as_view()),
@@ -47,6 +49,9 @@ urlpatterns = [
     path('score/queryRank', ScoreRankView.as_view()),
     path('score/delete/<str:score_id>', ScoreDeleteView.as_view()),
     path('score/delete', ScoreDeleteView.as_view()),
+
+    path('attendance/mark', AttendanceMarkView.as_view()),
+    path('attendance/queryByPage', AttendanceQueryView.as_view()),
 
     path('class/queryByPage', ClassQueryByPageView.as_view()),
     path('class/save', ClassSaveView.as_view()),

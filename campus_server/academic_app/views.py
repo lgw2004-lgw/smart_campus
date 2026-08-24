@@ -2,7 +2,7 @@ from utils.base_view import BaseView
 from utils.response import success, error, page_response
 from utils.pagination import get_page_params
 from utils.gen_id import gen_id
-from .models import StuStudent, StuStudentFile, StuClass, AcaCourse, AcaScheduling, AcaEnrollment, AcaExam, AcaScore
+from .models import StuStudent, StuStudentFile, StuClass, AcaCourse, AcaScheduling, AcaEnrollment, AcaExam, AcaScore, AcaAttendance
 import json
 
 # ---- 学生建档 ----
@@ -158,19 +158,26 @@ class SchedulingSelectView(BaseView):
 class SchedulingAddView(BaseView):
     def post(self, request):
         body = self.parse_body(request)
-        # update_or_create 按 teacher+day+section 与 room+day+section 唯一
+        def gv(camel, snake): return body.get(camel) if body.get(camel) is not None else body.get(snake)
+        teacher_id = gv('teacherId','teacher_id')
+        scheduling_day = gv('schedulingDay','scheduling_day')
+        section_type = gv('sectionType','section_type')
+        course_id = gv('courseId','course_id')
+        classroom_id = gv('classroomId','classroom_id')
+        scheduling_type = gv('schedulingType','scheduling_type') or '1'
+        if not teacher_id or not scheduling_day or not section_type:
+            return error("teacherId/schedulingDay/sectionType必填", code=400)
         obj, created = AcaScheduling.objects.update_or_create(
-            teacher_id=body['teacherId'],
-            scheduling_day=body['schedulingDay'],
-            section_type=body['sectionType'],
+            teacher_id=teacher_id,
+            scheduling_day=scheduling_day,
+            section_type=section_type,
             defaults={
-                'course_id': body.get('courseId'),
-                'classroom_id': body.get('classroomId'),
-                'scheduling_type': body.get('schedulingType','1'),
+                'course_id': course_id,
+                'classroom_id': classroom_id,
+                'scheduling_type': scheduling_type,
             }
         )
-        # 额外校验教室冲突
-        if AcaScheduling.objects.filter(classroom_id=body.get('classroomId'), scheduling_day=body['schedulingDay'], section_type=body['sectionType']).exclude(id=obj.id).exists():
+        if classroom_id and AcaScheduling.objects.filter(classroom_id=classroom_id, scheduling_day=scheduling_day, section_type=section_type).exclude(id=obj.id).exists():
             return error("教室时间冲突", code=400)
         return success({"id": obj.id})
 
@@ -180,20 +187,43 @@ class SchedulingUpdateView(BaseView):
         sid = body.get('id')
         if not sid:
             return error("id 不能为空", code=400)
-        AcaScheduling.objects.filter(id=sid).update(**{k: body[k] for k in body if k in ['course_id','teacher_id','classroom_id','scheduling_day','section_type','scheduling_type']})
+        # 兼容 camel/snake 双命名
+        mapping = {'courseId':'course_id','course_id':'course_id','teacherId':'teacher_id','teacher_id':'teacher_id','classroomId':'classroom_id','classroom_id':'classroom_id','schedulingDay':'scheduling_day','scheduling_day':'scheduling_day','sectionType':'section_type','section_type':'section_type','schedulingType':'scheduling_type','scheduling_type':'scheduling_type'}
+        upd={}
+        for k,v in body.items():
+            if k in mapping:
+                upd[mapping[k]]=v
+        if upd:
+            AcaScheduling.objects.filter(id=sid).update(**upd)
         return success()
 
 # ---- 选课 ----
 class EnrollmentAddView(BaseView):
     def post(self, request):
         body = self.parse_body(request)
-        student_id = body['studentId']
-        course_id = body['courseId']
-        schedule_id = body.get('scheduleId')
-        # 校验是否已选
+        student_id = body.get('studentId') or body.get('student_id')
+        course_id = body.get('courseId') or body.get('course_id')
+        schedule_id = body.get('scheduleId') or body.get('schedule_id')
+        if not student_id or not course_id:
+            return error("studentId与courseId必填", code=400)
+        # 归档拦截：is_final=1 禁止重复修读
+        try:
+            stu = StuStudent.objects.get(student_id=student_id)
+            if stu.is_final == '1':
+                return error("课程已完成，无法重复修读（已归档）", code=400)
+        except StuStudent.DoesNotExist:
+            return error("学生不存在", code=404)
+        # 课程状态校验
+        try:
+            crs = AcaCourse.objects.get(course_id=course_id)
+            if crs.status == '1':
+                return error("课程已停用，无法选课", code=400)
+        except AcaCourse.DoesNotExist:
+            return error("课程不存在", code=404)
+        # 校验是否已选（含待缴费/已选）
         if AcaEnrollment.objects.filter(student_id=student_id, course_id=course_id, status__in=['0','1']).exists():
             return error("已选该课程", code=400)
-        # 容量校验略（需关联课程容量字段，此处演示直接放行）
+        # 并发：已归档/已完成历史成绩禁止重修需重新缴费校验（此处仅拦截归档，历史成绩由Score层另控）
         enroll_id = gen_id('ENR')
         AcaEnrollment.objects.create(enroll_id=enroll_id, student_id=student_id, course_id=course_id, schedule_id=schedule_id, status='0')
         return success({"enrollId": enroll_id})
@@ -218,7 +248,7 @@ class EnrollmentQueryByPageView(BaseView):
             qs = qs.filter(student_id=data['studentId'])
         if data.get('courseId'):
             qs = qs.filter(course_id=data['courseId'])
-        if data.get('status') is not None:
+        if data.get('status') not in (None, '') :
             qs = qs.filter(status=data['status'])
         total = qs.count()
         lst = list(qs.order_by('-create_time')[(page_no-1)*page_size: page_no*page_size].values())
@@ -257,33 +287,46 @@ class ExamAddView(BaseView):
 class ScoreAddView(BaseView):
     def post(self, request):
         body = self.parse_body(request)
-        # GPA 简算：仅分数可改，绩点随分数自动重算
-        score = float(body.get('score',0))
-        if score >= 90:
-            gpa = 4.0
-        elif score >= 80:
-            gpa = 3.0
-        elif score >= 70:
-            gpa = 2.0
-        elif score >= 60:
-            gpa = 1.0
-        else:
-            gpa = 0.0
-        student_id = body['studentId']
-        course_id = body['courseId']
-        semester = body.get('semester','2024-2025-1')
-        # 仅修改分数：若已存在同（学生,课程,学期）则只更新分数/绩点，其他字段不动
+        # GPA 简算
         try:
-            s = AcaScore.objects.get(student_id=student_id, course_id=course_id, semester=semester)
+            score = float(body.get('score',0))
+        except:
+            return error("score 非法", code=400)
+        if score >= 90: gpa = 4.0
+        elif score >= 80: gpa = 3.0
+        elif score >= 70: gpa = 2.0
+        elif score >= 60: gpa = 1.0
+        else: gpa = 0.0
+        student_id = body.get('studentId') or body.get('student_id')
+        course_id = body.get('courseId') or body.get('course_id')
+        semester = body.get('semester','2024-2025-1')
+        exam_type = str(body.get('examType') or body.get('exam_type') or '0')
+        if not student_id or not course_id:
+            return error("studentId与courseId必填", code=400)
+        # 必须已选且已缴费(status=1)才能录分（防未缴费/未选课幽灵分）
+        if not AcaEnrollment.objects.filter(student_id=student_id, course_id=course_id, status='1').exists():
+            return error("该生未选课或未缴费，无考试资格", code=400)
+        # 补考/重修历史保留：exam_type 0正常 1补考 2重修，is_retake标记
+        is_retake = '1' if exam_type in ('1','2') else '0'
+        # 同(学生,课程,学期,exam_type)已存在则更新，否则创建
+        # 若exam_type为0且已存在，视为首考更新；若为1/2则保留原0记录，新增1条
+        try:
+            s = AcaScore.objects.get(student_id=student_id, course_id=course_id, semester=semester, exam_type=exam_type)
+            # 已存在同类型：仅允许更新分数（幂等）
             s.score = score
             s.gpa_point = gpa
-            # 考试ID等保持不动（按需求其他不能动），若传则忽略
-            s.save(update_fields=['score','gpa_point'])
-            return success({"scoreId": s.score_id, "gpa": float(gpa)})
+            s.is_retake = is_retake
+            s.exam_id = body.get('examId') or s.exam_id
+            s.save(update_fields=['score','gpa_point','is_retake','exam_id','update_time'])
+            return success({"scoreId": s.score_id, "gpa": float(gpa), "is_retake": s.is_retake})
         except AcaScore.DoesNotExist:
-            sid = body.get('scoreId') or gen_id('SCOR')
-            s = AcaScore.objects.create(score_id=sid, student_id=student_id, course_id=course_id, semester=semester, exam_id=body.get('examId'), score=score, gpa_point=gpa)
-            return success({"scoreId": s.score_id, "gpa": float(gpa)})
+            # 若是补考/重修，需确保原首考记录存在（挂科历史）
+            if is_retake=='1' and not AcaScore.objects.filter(student_id=student_id, course_id=course_id, semester=semester, exam_type='0').exists():
+                # 允许直接创建补考但标记
+                pass
+            sid = body.get('scoreId') or body.get('score_id') or gen_id('SCOR')
+            s = AcaScore.objects.create(score_id=sid, student_id=student_id, course_id=course_id, semester=semester, exam_type=exam_type, is_retake=is_retake, exam_id=body.get('examId'), score=score, gpa_point=gpa)
+            return success({"scoreId": s.score_id, "gpa": float(gpa), "is_retake": is_retake})
 
 class ScoreImportView(BaseView):
     def post(self, request):
@@ -300,10 +343,13 @@ class ScoreImportView(BaseView):
                 if not row or not row[0]:
                     continue
                 student_id, course_id, score, semester = row[0], row[1], row[2], (row[3] if len(row)>3 else '2024-2025-1')
+                exam_type = str(row[4] if len(row)>4 and row[4] else '0')
+                is_retake = '1' if exam_type!='0' else '0'
                 sid = gen_id('SCOR')
                 score_val = float(score or 0)
                 gpa = 4.0 if score_val>=90 else 3.0 if score_val>=80 else 2.0 if score_val>=70 else 1.0 if score_val>=60 else 0.0
-                AcaScore.objects.update_or_create(student_id=str(student_id), course_id=str(course_id), semester=str(semester), defaults={'score_id': sid, 'score': score_val, 'gpa_point': gpa})
+                # 需已选校验略，导入时仅告警
+                AcaScore.objects.update_or_create(student_id=str(student_id), course_id=str(course_id), semester=str(semester), exam_type=exam_type, defaults={'score_id': sid, 'score': score_val, 'gpa_point': gpa, 'is_retake': is_retake})
                 count+=1
             return success({"imported": count})
         except Exception as e:
@@ -404,6 +450,25 @@ class StudentDeleteView(BaseView):
         stu.delete()
         return success()
 
+class StudentArchiveView(BaseView):
+    """POST /student/archive {studentId} 成绩→归档，需校验（如学分/GPA）此处简化为需至少1条成绩"""
+    def post(self, request):
+        body = self.parse_body(request)
+        sid = body.get('studentId') or body.get('student_id')
+        if not sid:
+            return error("studentId 不能为空", code=400)
+        try:
+            stu = StuStudent.objects.get(student_id=sid)
+        except StuStudent.DoesNotExist:
+            return error("学生不存在", code=404)
+        if stu.is_final == '1':
+            return error("已归档", code=400)
+        if not AcaScore.objects.filter(student_id=sid).exists():
+            return error("无成绩记录，无法归档", code=400)
+        stu.is_final = '1'
+        stu.save(update_fields=['is_final'])
+        return success({"studentId": sid, "is_final": "1"})
+
 class SchedulingDeleteView(BaseView):
     def post(self, request, id=None):
         sid = id or self.parse_body(request).get('id')
@@ -424,8 +489,13 @@ class EnrollmentUpdateView(BaseView):
             return error("选课记录不存在", code=404)
         if 'scheduleId' in body:
             en.schedule_id = body.get('scheduleId') or None
-        if 'status' in body and body['status'] in ('0','1','2','5'):
-            en.status = body['status']
+        if 'status' in body and body['status'] is not None and body['status'] != '':
+            new_status = str(body['status'])
+            # 仅允许 0→2 退选，其他变迁需走缴费/退费专用接口
+            allowed = {('0','2')}
+            if (en.status, new_status) not in allowed:
+                return error(f"非法的状态流转 {en.status}→{new_status}，仅允许 0→2", code=400)
+            en.status = new_status
         en.save()
         return success({"enrollId": enroll_id})
 
@@ -436,3 +506,31 @@ class ScoreDeleteView(BaseView):
             return error("scoreId 不能为空", code=400)
         AcaScore.objects.filter(score_id=sid).delete()
         return success()
+
+class AttendanceMarkView(BaseView):
+    """POST /attendance/mark {studentId,courseId,scheduleId} 缴费后才能上课"""
+    def post(self, request):
+        body = self.parse_body(request)
+        sid = body.get('studentId') or body.get('student_id')
+        cid = body.get('courseId') or body.get('course_id')
+        sch_id = body.get('scheduleId') or body.get('schedule_id')
+        if not sid or not cid:
+            return error("studentId与courseId必填", code=400)
+        # 必须已选且已缴费 status=1
+        if not AcaEnrollment.objects.filter(student_id=sid, course_id=cid, status='1').exists():
+            return error("未缴费或未选课，禁止上课（需先完成缴费 status=1）", code=400)
+        # 退选后也禁止
+        if AcaEnrollment.objects.filter(student_id=sid, course_id=cid, status='2').exists():
+            return error("已退选，无上课资格", code=400)
+        att = AcaAttendance.objects.create(student_id=sid, course_id=cid, schedule_id=sch_id, attend_status='1')
+        return success({"attendanceId": att.id})
+
+class AttendanceQueryView(BaseView):
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        qs = AcaAttendance.objects.all()
+        if data.get('studentId'): qs = qs.filter(student_id=data['studentId'])
+        if data.get('courseId'): qs = qs.filter(course_id=data['courseId'])
+        total = qs.count()
+        lst = list(qs.order_by('-create_time')[(page_no-1)*page_size: page_no*page_size].values())
+        return page_response(lst, total, page_no, page_size)
