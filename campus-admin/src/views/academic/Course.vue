@@ -24,7 +24,7 @@
         <el-form-item label="编码"><el-input v-model="form.courseCode" placeholder="留空自动生成" /></el-form-item>
         <el-form-item label="学分"><el-input-number v-model="form.credit" :min="0.5" :max="10" :step="0.5" /></el-form-item>
         <el-form-item label="学时"><el-input-number v-model="form.hours" :min="1" :max="200" /></el-form-item>
-        <el-form-item label="院系ID"><el-input v-model="form.deptId" type="number" /></el-form-item>
+        <el-form-item label="所属院系"><el-tree-select v-model="form.deptId" :data="deptTree" :props="{label:'dept_name', value:'dept_id', children:'children'}" placeholder="选择所属学院/专业" clearable check-strictly style="width:100%" /></el-form-item>
         <el-form-item label="状态"><el-select v-model="form.status"><el-option label="正常" value="0"/><el-option label="停用" value="1"/></el-select></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="submit">保存</el-button></template>
@@ -32,12 +32,15 @@
   </el-card>
 </template>
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChange, handleSizeChange, search } = usePage('/course/queryByPage', {courseName:''})
 fetch()
+const deptTree=ref<any[]>([])
+async function loadDepts(){ const res:any=await request.get('/dept/tree'); deptTree.value=res.data||[] }
+onMounted(loadDepts)
 const dialog=ref(false)
 const form=reactive<any>({courseId:'',courseName:'',courseCode:'',credit:3,hours:48,deptId:'',status:'0'})
 function openEdit(row?:any){

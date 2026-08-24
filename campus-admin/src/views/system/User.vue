@@ -20,7 +20,7 @@
         <el-form-item label="用户名"><el-input v-model="form.userName"/></el-form-item>
         <el-form-item label="手机"><el-input v-model="form.phone"/></el-form-item>
         <el-form-item label="密码"><el-input v-model="form.password" placeholder="留空不改，默认123456" show-password/></el-form-item>
-        <el-form-item label="院系"><el-select v-model="form.deptId" placeholder="选择院系" clearable filterable style="width:100%"><el-option v-for="d in deptOptions" :key="d.dept_id" :label="d.dept_name" :value="d.dept_id"/></el-select></el-form-item>
+        <el-form-item label="院系"><el-tree-select v-model="form.deptId" :data="deptTree" :props="{label:'dept_name', value:'dept_id', children:'children'}" placeholder="选择院系（顶级为学院）" clearable check-strictly style="width:100%" /></el-form-item>
         <el-form-item label="类型"><el-select v-model="form.userType"><el-option label="管理员" value="0"/><el-option label="教师" value="1"/><el-option label="学生" value="2"/></el-select></el-form-item>
         <el-form-item label="状态"><el-select v-model="form.status"><el-option label="正常" value="0"/><el-option label="停用" value="1"/></el-select></el-form-item>
       </el-form>
@@ -42,9 +42,14 @@ import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChange, handleSizeChange, search } = usePage('/user/queryByPage', {userName:''})
 fetch()
-const deptOptions=ref<any[]>([])
+const deptTree=ref<any[]>([])
 const deptMap=ref<Record<string,string>>({})
-async function loadDepts(){ const res:any=await request.post('/dept/queryByPage', {pageNo:1,pageSize:50,data:{}}); const lst=res.data.list||[]; deptOptions.value=lst.filter((d:any)=>d.parent_id===0); const m:Record<string,string>={}; for(const d of lst) m[d.dept_id]=d.dept_name; deptMap.value=m }
+async function loadDepts(){
+  const res:any=await request.get('/dept/tree'); deptTree.value=res.data||[]
+  const m:Record<string,string>={}
+  const dfs=(arr:any[])=>{ for(const d of arr){ m[d.dept_id]=d.dept_name; if(d.children) dfs(d.children) } }
+  dfs(deptTree.value); deptMap.value=m
+}
 onMounted(loadDepts)
 const dialog=ref(false)
 const form=reactive<any>({userId:'', userName:'', phone:'', password:'', deptId:'', userType:'0', status:'0'})
