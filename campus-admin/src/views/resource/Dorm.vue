@@ -93,7 +93,7 @@ fetch()
 const buildingOptions=ref<any[]>([])
 const buildingMap=ref<Record<string,string>>({})
 async function loadBuildings(){
-  const res:any=await request.post('/building/queryByPage', {pageNo:1,pageSize:50,data:{}})
+  const res:any=await request.post('/building/queryByPage', {pageNo:1,pageSize:200,data:{}})
   buildingOptions.value=res.data.list||[]
   const m:Record<string,string>={}; for(const b of buildingOptions.value) m[b.building_id]=b.building_name; buildingMap.value=m
 }
