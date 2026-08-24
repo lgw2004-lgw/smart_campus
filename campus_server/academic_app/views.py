@@ -20,7 +20,27 @@ class StudentQueryByIdCardView(BaseView):
 class StudentAddView(BaseView):
     def post(self, request):
         body = self.parse_body(request)
-        sid = body.get('studentId') or gen_id('STU')
+        sid = body.get('studentId') or body.get('student_id')
+        # 编辑分支：学号已存在则更新
+        if sid and StuStudent.objects.filter(student_id=sid).exists():
+            # 身份证唯一校验（排除自身）
+            id_card = body.get('idCard') or body.get('id_card')
+            if id_card and StuStudent.objects.filter(id_card=id_card).exclude(student_id=sid).exists():
+                return error("身份证已存在", code=400)
+            StuStudent.objects.filter(student_id=sid).update(
+                name=body.get('name') or body.get('studentName') or StuStudent.objects.get(student_id=sid).name,
+                sex=body.get('sex') if body.get('sex') is not None else StuStudent.objects.get(student_id=sid).sex,
+                id_card=id_card if id_card is not None else StuStudent.objects.get(student_id=sid).id_card,
+                phone=body.get('phone') if body.get('phone') is not None else StuStudent.objects.get(student_id=sid).phone,
+                dept_id=body.get('deptId') if body.get('deptId') is not None else StuStudent.objects.get(student_id=sid).dept_id,
+                class_id=body.get('classId') if body.get('classId') is not None else StuStudent.objects.get(student_id=sid).class_id,
+                enroll_year=body.get('enrollYear') if body.get('enrollYear') is not None else StuStudent.objects.get(student_id=sid).enroll_year,
+                avatar=body.get('avatar') if body.get('avatar') is not None else StuStudent.objects.get(student_id=sid).avatar,
+            )
+            return success({"studentId": sid})
+        # 新增分支
+        if not sid:
+            sid = gen_id('STU')
         if StuStudent.objects.filter(student_id=sid).exists():
             return error("学号已存在", code=400)
         if body.get('idCard') and StuStudent.objects.filter(id_card=body['idCard']).exists():
