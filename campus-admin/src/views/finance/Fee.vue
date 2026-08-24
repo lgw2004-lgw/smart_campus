@@ -1,19 +1,35 @@
 <template>
   <el-card>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h3>缴费管理 · 模拟微信Native（计费→下单→出码→轮询→确认）</h3>
+      <h3>缴费管理 · 总学费+重修费（新）/ 模拟微信Native</h3>
       <el-button type="primary" @click="fetch">刷新订单</el-button>
     </div>
 
     <el-card style="margin-bottom:16px" shadow="never">
-      <h4>1. 选课计费</h4>
+      <h4>0. 总学费发布（管理员 · 开学一次）</h4>
+      <el-form inline>
+        <el-form-item label="学期"><el-input v-model="tuitionForm.semester" placeholder="如 2025-2026-1" style="width:160px"/></el-form-item>
+        <el-form-item label="总金额"><el-input v-model="tuitionForm.totalAmount" type="number" placeholder="如 8000" style="width:140px"/></el-form-item>
+        <el-form-item label="明细"><el-input v-model="tuitionForm.detail" placeholder="学费8000含学分/住宿等" style="width:340px"/></el-form-item>
+        <el-form-item><el-button type="primary" @click="saveTuition">发布</el-button><el-button @click="loadTuitions">刷新</el-button></el-form-item>
+      </el-form>
+      <el-table :data="tuitionList" border size="small" style="margin-top:10px">
+        <el-table-column prop="semester" label="学期" width="150"/>
+        <el-table-column prop="total_amount" label="总学费" width="120"/>
+        <el-table-column prop="detail" label="明细"/>
+        <el-table-column prop="create_time" label="发布时间" width="170"/>
+      </el-table>
+    </el-card>
+
+    <el-card style="margin-bottom:16px" shadow="never">
+      <h4>1. 选课计费（重修按学分计费 · 正常选课无需此步，已缴总学费即可选）</h4>
       <el-form inline>
         <el-form-item label="学号"><el-input v-model="calcForm.studentId" placeholder="20240101" style="width:140px"/></el-form-item>
-        <el-form-item label="选课ID(逗号)"><el-input v-model="calcForm.enrollIdsStr" placeholder="ENR...,ENR..." style="width:340px"/></el-form-item>
-        <el-form-item><el-button @click="doCalc">计费</el-button> <el-button type="primary" @click="doPayMsg">生成订单</el-button></el-form-item>
+        <el-form-item label="选课ID(逗号)"><el-input v-model="calcForm.enrollIdsStr" placeholder="仅重修时填 ENR...,ENR..." style="width:340px"/></el-form-item>
+        <el-form-item><el-button @click="doCalc">重修计费</el-button> <el-button type="primary" @click="doPayMsg">生成重修订单</el-button></el-form-item>
       </el-form>
       <div v-if="calcData" style="margin-top:8px">
-        <el-tag type="info">总额 {{ calcData.totalAmount }} 元</el-tag>
+        <el-tag type="info">重修总额 {{ calcData.totalAmount }} 元</el-tag>
         <div style="margin-top:6px" v-for="it in calcData.items" :key="it.enrollId">{{ it.itemName }} ({{ it.courseId }}) 单价 {{ it.itemPrice }}</div>
       </div>
     </el-card>
@@ -41,7 +57,7 @@
       </el-form>
     </el-card>
 
-    <h4>订单列表</h4>
+    <h4>订单列表（区分 总学费/重修/普通）</h4>
     <el-form inline style="margin-bottom:8px">
       <el-form-item><el-input v-model="query.studentId" placeholder="学号" clearable style="width:140px"/><el-select v-model="query.orderStatus" placeholder="状态" clearable style="width:120px;margin-left:6px"><el-option label="未付" value="0"/><el-option label="已付" value="3"/></el-select><el-button style="margin-left:6px" @click="search">查询</el-button></el-form-item>
     </el-form>
@@ -49,8 +65,10 @@
       <el-table-column prop="order_id" label="订单ID" width="190"/>
       <el-table-column prop="student_id" label="学号" width="110"/>
       <el-table-column prop="order_amount" label="金额" width="100"/>
+      <el-table-column prop="order_type" label="类型" width="90"><template #default="{row}"><el-tag :type="row.order_type==='TUITION'?'success':row.order_type==='RETAKE'?'warning':'info'">{{ row.order_type==='TUITION'?'总学费':row.order_type==='RETAKE'?'重修':'普通' }}</el-tag></template></el-table-column>
+      <el-table-column prop="semester" label="学期" width="120"/>
       <el-table-column prop="order_status" label="状态" width="80"><template #default="{row}"><el-tag :type="row.order_status==='3'?'success':'warning'">{{ row.order_status==='3'?'已付':'未付' }}</el-tag></template></el-table-column>
-      <el-table-column prop="ch_id" label="关联选课" min-width="200"/>
+      <el-table-column prop="ch_id" label="关联" min-width="160"/>
       <el-table-column prop="create_time" label="创建时间" width="170"/>
       <el-table-column label="操作" width="220"><template #default="{row}"><el-button size="small" @click="payForm.orderId=row.order_id;refundForm.orderId=row.order_id">选中</el-button><el-button size="small" @click="getQRById(row.order_id)">二维码</el-button></template></el-table-column>
     </el-table>
@@ -58,12 +76,17 @@
   </el-card>
 </template>
 <script setup lang="ts">
-import { ref, reactive, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChange, handleSizeChange, search } = usePage('/feeOrder/queryByPage', {studentId:'', orderStatus:''})
 fetch()
+const tuitionForm=reactive<any>({semester:'2025-2026-1', totalAmount:'8000', detail:'学费8000（含学分/住宿/教材）'})
+const tuitionList=ref<any[]>([])
+async function loadTuitions(){ const res:any=await request.post('/fee/tuition/queryByPage', {pageNo:1,pageSize:20,data:{}}); tuitionList.value=res?.data?.list ?? [] }
+async function saveTuition(){ if(!tuitionForm.semester||!tuitionForm.totalAmount) return ElMessage.warning('学期与金额必填'); await request.post('/fee/tuition/save', {semester:tuitionForm.semester, totalAmount:Number(tuitionForm.totalAmount), detail:tuitionForm.detail}); ElMessage.success('已发布'); loadTuitions() }
+onMounted(loadTuitions)
 const calcForm=reactive<any>({studentId:'20240101', enrollIdsStr:''})
 const calcData=ref<any>(null)
 async function doCalc(){ const ids=calcForm.enrollIdsStr.split(',').map((s:string)=>s.trim()).filter(Boolean); if(!ids.length) return ElMessage.warning('填选课ID'); const res:any = await request.post('/fee/calc', {enrollIds:ids}); calcData.value=res?.data ?? null; if(!calcData.value) return ElMessage.error('计费失败'); ElMessage.success('计费完成') }

@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-head">
-      <div><h2>选课大厅</h2><p>已为你过滤已选与时间冲突课程 · 每学分 100元</p></div>
+      <div><h2>选课大厅</h2><p>总学费一次缴清后直接选课 · 重修按学分×100自动计费</p></div>
       <el-input placeholder="搜索课程" prefix-icon="Search" style="width:260px" v-model="kw" clearable />
     </div>
     <div class="course-grid">
@@ -23,12 +23,26 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import request from '@/utils/request'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 const sid=localStorage.getItem('studentId')||''
 const list=ref<any[]>([]); const kw=ref('')
 async function load(){ const res:any=await request.get('/course/querySelectable', {params:{studentId:sid}}); list.value=res.data||[] }
 const filtered=computed(()=>{ if(!kw.value) return list.value; return list.value.filter((c:any)=>c.course_name.includes(kw.value)||c.course_code.includes(kw.value)) })
-async function enroll(row:any){ await request.post('/enrollment/add', {studentId:sid, courseId:row.course_id}); ElMessage.success(`已选 ${row.course_name}，请到“我的选课/缴费”付款`); load() }
+async function enroll(row:any){
+  try{
+    const res:any=await request.post('/enrollment/add', {studentId:sid, courseId:row.course_id})
+    if(res?.data?.isRetake){
+      ElMessageBox.alert(`重修课 ${row.course_name} 已选，重修费 ¥${res.data.retakeFee}（${row.credit}学分×100）订单 ${res.data.retakeOrderId} 已生成，请到“我的缴费”支付`, '重修计费')
+    } else {
+      ElMessage.success(`已选 ${row.course_name}（总学费已覆盖，无需逐门缴费）`)
+    }
+    load()
+  }catch(e:any){
+    const msg=e?.message || e?.response?.data?.message || ''
+    if(msg.includes('总学费')) ElMessageBox.alert(msg+'，请先到“我的缴费”缴纳总学费','未缴总学费')
+    else ElMessage.error(msg||'选课失败')
+  }
+}
 onMounted(load)
 </script>
 <style scoped>

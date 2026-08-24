@@ -5,12 +5,26 @@ class FeeOrder(models.Model):
     student_id = models.CharField(max_length=20)
     order_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     order_status = models.CharField(max_length=1, default='0', help_text='0未付 3已付')
-    ch_id = models.CharField(max_length=20, null=True)
+    ch_id = models.CharField(max_length=255, null=True)
+    order_type = models.CharField(max_length=20, default='NORMAL', help_text='NORMAL/TUITION/RETAKE')
+    semester = models.CharField(max_length=20, null=True)
+    detail = models.TextField(null=True)
     create_time = models.DateTimeField(auto_now_add=True)
     pay_time = models.DateTimeField(null=True)
 
     class Meta:
         db_table = 'fee_order'
+        managed = False
+
+class FeeTuitionConfig(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    semester = models.CharField(max_length=20)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    detail = models.TextField(null=True)
+    create_time = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'fee_tuition_config'
         managed = False
 
 class FeeOrderItem(models.Model):

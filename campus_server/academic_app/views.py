@@ -206,27 +206,49 @@ class EnrollmentAddView(BaseView):
         schedule_id = body.get('scheduleId') or body.get('schedule_id')
         if not student_id or not course_id:
             return error("studentId与courseId必填", code=400)
-        # 归档拦截：is_final=1 禁止重复修读
         try:
             stu = StuStudent.objects.get(student_id=student_id)
             if stu.is_final == '1':
                 return error("课程已完成，无法重复修读（已归档）", code=400)
         except StuStudent.DoesNotExist:
             return error("学生不存在", code=404)
-        # 课程状态校验
         try:
             crs = AcaCourse.objects.get(course_id=course_id)
             if crs.status == '1':
                 return error("课程已停用，无法选课", code=400)
         except AcaCourse.DoesNotExist:
             return error("课程不存在", code=404)
-        # 校验是否已选（含待缴费/已选）
         if AcaEnrollment.objects.filter(student_id=student_id, course_id=course_id, status__in=['0','1']).exists():
             return error("已选该课程", code=400)
-        # 并发：已归档/已完成历史成绩禁止重修需重新缴费校验（此处仅拦截归档，历史成绩由Score层另控）
+        # 总学费校验：需先缴纳当前学期总学费（TUITION 订单已付）
+        try:
+            from finance_app.models import FeeOrder, FeeTuitionConfig, FeeOrderItem
+            cfg = FeeTuitionConfig.objects.order_by('-create_time').first()
+            if cfg:
+                sem = cfg.semester
+                has_tuition = FeeOrder.objects.filter(student_id=student_id, semester=sem, order_type='TUITION', order_status='3').exists()
+                if not has_tuition:
+                    # 未缴总学费禁止选课（重修也需先缴总学费）
+                    return error(f"请先缴纳 {sem} 总学费", code=400)
+        except Exception:
+            pass
+        # 是否重修：已有成绩即视为重修（需另缴重修费）
+        is_retake = AcaScore.objects.filter(student_id=student_id, course_id=course_id).exists()
         enroll_id = gen_id('ENR')
         AcaEnrollment.objects.create(enroll_id=enroll_id, student_id=student_id, course_id=course_id, schedule_id=schedule_id, status='0')
-        return success({"enrollId": enroll_id})
+        if is_retake:
+            # 自动计算重修费并生成 RETAKE 订单（待付）
+            try:
+                from finance_app.models import FeeOrder, FeeOrderItem
+                price = float(crs.credit or 3) * 100
+                order_id = gen_id('ORD')
+                sem = cfg.semester if 'cfg' in locals() and cfg else '2024-2025-1'
+                FeeOrder.objects.create(order_id=order_id, student_id=student_id, order_amount=price, order_status='0', order_type='RETAKE', semester=sem, ch_id=enroll_id, detail=f"重修 {crs.course_name}")
+                FeeOrderItem.objects.create(item_id=gen_id('ITEM'), order_id=order_id, ref_id=enroll_id, item_name=f"重修-{crs.course_name}", item_price=price, item_num=1, item_amount=price)
+                return success({"enrollId": enroll_id, "isRetake": True, "retakeFee": price, "retakeOrderId": order_id})
+            except Exception as e:
+                return success({"enrollId": enroll_id, "isRetake": True, "retakeFeeError": str(e)})
+        return success({"enrollId": enroll_id, "isRetake": False})
 
 class EnrollmentCancelView(BaseView):
     def post(self, request, enroll_id):
