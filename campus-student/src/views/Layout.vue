@@ -13,7 +13,7 @@
         <div class="semester-tag">{{ semesterLabel }}</div>
       </div>
       <div class="header-right">
-        <el-badge :value="3" class="bell"><el-icon :size="20"><Bell /></el-icon></el-badge>
+        <el-badge :value="noticeCount" :hidden="noticeCount===0" class="bell" style="cursor:pointer" @click="router.push('/notices')"><el-icon :size="20"><Bell /></el-icon></el-badge>
         <div class="user-card">
           <el-avatar :size="36" style="background:#fff;color:#1e5eff;font-weight:bold">{{ auth.name.slice(0,1) }}</el-avatar>
           <div class="user-info">
@@ -66,6 +66,7 @@ import { useRouter } from 'vue-router'
 import request from '@/utils/request'
 const auth=useAuthStore(); const router=useRouter()
 function onCmd(c:string){ if(c==='profile'){ router.push('/profile'); return } if(c==='logout'){ auth.logout(); router.push('/login') } }
+const noticeCount=ref(0)
 const semesterLabel=ref('2024-2025学年 · 春季学期')
 function formatSemester(s:string){
   // 2025-2026-1 -> 2025-2026学年 · 秋季学期, 2025-2026-2 -> 春季
@@ -89,6 +90,10 @@ onMounted(async()=>{
         localStorage.setItem('studentName', r.data.name)
       }
     }
+  }catch{}
+  try{
+    const r:any=await request.post('/notice/queryByPage', {pageNo:1,pageSize:1,data:{}})
+    noticeCount.value=r?.data?.total ?? 0
   }catch{}
 })
 </script>
