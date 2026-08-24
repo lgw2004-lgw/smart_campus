@@ -20,9 +20,9 @@
             <div class="user-name">{{ auth.name }} 同学</div>
             <div class="user-id">学号 {{ auth.studentId }}</div>
           </div>
-          <el-dropdown trigger="click" @command="onCmd">
+            <el-dropdown trigger="click" @command="onCmd">
             <el-icon style="color:#fff;cursor:pointer"><ArrowDown /></el-icon>
-            <template #dropdown><el-dropdown-menu><el-dropdown-item command="logout">退出登录</el-dropdown-item></el-dropdown-menu></template>
+            <template #dropdown><el-dropdown-menu><el-dropdown-item command="profile">个人资料</el-dropdown-item><el-dropdown-item command="logout">退出登录</el-dropdown-item></el-dropdown-menu></template>
           </el-dropdown>
         </div>
       </div>
@@ -44,6 +44,7 @@
           <el-menu-item index="/my-dorm"><el-icon><OfficeBuilding /></el-icon>宿舍服务</el-menu-item>
           <el-menu-item index="/my-book"><el-icon><Notebook /></el-icon>图书馆</el-menu-item>
           <el-menu-item index="/my-score"><el-icon><DataAnalysis /></el-icon>成绩查询</el-menu-item>
+          <el-menu-item index="/profile"><el-icon><User /></el-icon>个人资料</el-menu-item>
           <el-menu-item index="/notices"><el-icon><Bell /></el-icon>通知公告</el-menu-item>
         </el-menu>
         <div class="side-footer">
@@ -64,7 +65,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import request from '@/utils/request'
 const auth=useAuthStore(); const router=useRouter()
-function onCmd(c:string){ if(c==='logout'){ auth.logout(); router.push('/login') } }
+function onCmd(c:string){ if(c==='profile'){ router.push('/profile'); return } if(c==='logout'){ auth.logout(); router.push('/login') } }
 const semesterLabel=ref('2024-2025学年 · 春季学期')
 function formatSemester(s:string){
   // 2025-2026-1 -> 2025-2026学年 · 秋季学期, 2025-2026-2 -> 春季
@@ -78,6 +79,17 @@ onMounted(async()=>{
     const res:any=await request.get('/fee/tuition/get')
     if(res?.data?.semester) semesterLabel.value=formatSemester(res.data.semester)
   }catch{ /* 保持默认 */ }
+  // 同步最新姓名（管理员改名后，旧token里还是旧名）
+  try{
+    const sid=auth.studentId || localStorage.getItem('studentId')
+    if(sid){
+      const r:any=await request.get(`/student/queryById/${sid}`)
+      if(r?.data?.name && r.data.name!==auth.name){
+        auth.name=r.data.name
+        localStorage.setItem('studentName', r.data.name)
+      }
+    }
+  }catch{}
 })
 </script>
 <style scoped>

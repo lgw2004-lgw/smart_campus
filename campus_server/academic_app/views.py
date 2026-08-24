@@ -17,6 +17,39 @@ class StudentQueryByIdCardView(BaseView):
         except StuStudent.DoesNotExist:
             return error("未找到学生", code=404)
 
+class StudentQueryByIdView(BaseView):
+    def get(self, request, student_id):
+        try:
+            stu = StuStudent.objects.get(student_id=student_id)
+            data={k: getattr(stu, k) for k in ['student_id','name','sex','id_card','phone','dept_id','class_id','enroll_year','avatar','is_final','create_time']}
+            # 关联档案
+            try:
+                from .models import StuStudentFile
+                f=StuStudentFile.objects.get(student_id=student_id)
+                data.update({k: getattr(f,k) for k in ['family_info','health_info','award_punish','remark','emergency_contact']})
+            except: pass
+            # 学院/专业名
+            try:
+                from system_app.models import SysDept
+                if stu.dept_id:
+                    d=SysDept.objects.filter(dept_id=stu.dept_id).first()
+                    if d:
+                        data['dept_name']=d.dept_name
+                        if d.parent_id and d.parent_id!=0:
+                            p=SysDept.objects.filter(dept_id=d.parent_id).first()
+                            if p: data['college_name']=p.dept_name
+                            data['major_name']=d.dept_name
+                        else:
+                            data['college_name']=d.dept_name
+                if stu.class_id:
+                    from .models import StuClass
+                    c=StuClass.objects.filter(class_id=stu.class_id).first()
+                    if c: data['class_name']=c.class_name
+            except: pass
+            return success(data)
+        except StuStudent.DoesNotExist:
+            return error("未找到学生", code=404)
+
 class StudentAddView(BaseView):
     def post(self, request):
         body = self.parse_body(request)

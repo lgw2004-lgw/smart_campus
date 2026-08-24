@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import (
-    StudentQueryByIdCardView, StudentAddView, StudentQueryByPageView, StudentFileAddView, StudentFileQueryView, StudentDeleteView, StudentArchiveView,
+    StudentQueryByIdCardView, StudentQueryByIdView, StudentAddView, StudentQueryByPageView, StudentFileAddView, StudentFileQueryView, StudentDeleteView, StudentArchiveView,
     CourseQueryByPageView, CourseSaveView, CourseDeleteView, CourseSelectableView,
     SchedulingSelectView, SchedulingAddView, SchedulingUpdateView, SchedulingDeleteView,
     EnrollmentAddView, EnrollmentCancelView, EnrollmentUpdateView, EnrollmentQueryByPageView, EnrollmentWorkNumView,
@@ -12,6 +12,7 @@ from .views import (
 
 urlpatterns = [
     path('student/queryByIdCard', StudentQueryByIdCardView.as_view()),
+    path('student/queryById/<str:student_id>', StudentQueryByIdView.as_view()),
     path('student/add', StudentAddView.as_view()),
     path('student/queryByPage', StudentQueryByPageView.as_view()),
     path('student/delete/<str:student_id>', StudentDeleteView.as_view()),

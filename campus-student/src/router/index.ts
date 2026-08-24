@@ -11,6 +11,7 @@ const router=createRouter({
       {path:'my-dorm', component:()=>import('@/views/MyDorm.vue'), meta:{title:'我的宿舍'}},
       {path:'my-book', component:()=>import('@/views/MyBook.vue'), meta:{title:'图书借阅'}},
       {path:'my-score', component:()=>import('@/views/MyScore.vue'), meta:{title:'我的成绩'}},
+      {path:'profile', component:()=>import('@/views/Profile.vue'), meta:{title:'个人资料'}},
       {path:'notices', component:()=>import('@/views/Notices.vue'), meta:{title:'公告资讯'}},
     ]}
   ]
