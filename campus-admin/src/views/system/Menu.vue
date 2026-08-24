@@ -19,8 +19,8 @@
     <el-row>
       <el-col :span="24">
         <el-card shadow="never" style="border-radius:14px;border:1px solid #e6ebf5;min-height:520px">
-          <template #header><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700">菜单树</span><div><el-tag type="info" size="small">{{ flatCount }} 个菜单</el-tag><el-button size="small" type="success" style="margin-left:8px" @click="openEdit()">新增菜单</el-button></div></div></template>
-          <el-tree
+          <template #header><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700">菜单树</span><div style="display:flex;gap:6px;align-items:center"><el-tag type="info" size="small">{{ flatCount }} 个菜单</el-tag><el-button size="small" @click="expandAll">展开全部</el-button><el-button size="small" @click="collapseAll">收起全部</el-button><el-button size="small" type="success" @click="openEdit()">新增菜单</el-button></div></div></template>
+          <el-tree ref="treeRef"
             :data="tree"
             :props="{label:'menu_name', children:'children'}"
             default-expand-all
@@ -72,7 +72,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Menu, House, Reading, User, Box, Wallet, Document, Setting } from '@element-plus/icons-vue'
 const userId=ref('')
 const tree=ref<any[]>([])
+const treeRef=ref<any>(null)
 const iconMap:any = { House, Reading, User, Box, Wallet, Document, Setting, Menu }
+function expandAll(){ const m=(treeRef.value as any)?.store?.nodesMap; if(m) Object.values(m).forEach((n:any)=> n.expanded=true) }
+function collapseAll(){ const m=(treeRef.value as any)?.store?.nodesMap; if(m) Object.values(m).forEach((n:any)=> n.expanded=false) }
 async function load(){
   const res:any = await request.get('/menu/queryTreeDataByUserId', {params: userId.value?{userId:userId.value}:{}})
   tree.value=res.data||[]
