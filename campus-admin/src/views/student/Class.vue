@@ -13,7 +13,7 @@
       <el-table-column prop="class_name" label="班级名"/>
       <el-table-column label="所属专业" width="180"><template #default="{row}">{{ deptMap[row.dept_id] || row.dept_id }}</template></el-table-column>
       <el-table-column prop="grade" label="年级" width="100"/>
-      <el-table-column label="班主任" width="140"><template #default="{row}">{{ teacherMap[row.head_teacher_id] || (row.head_teacher_id ? '教师#'+row.head_teacher_id : '-') }}</template></el-table-column>
+      <el-table-column label="辅导员" width="140"><template #default="{row}">{{ counselorMap[row.head_teacher_id] || (row.head_teacher_id ? '辅导员#'+row.head_teacher_id : '-') }}</template></el-table-column>
       <el-table-column label="操作" width="160"><template #default="{row}"><el-button size="small" @click="openEdit(row)">编辑</el-button><el-button size="small" type="danger" @click="removeRow(row)">删除</el-button></template></el-table-column>
     </el-table>
     <el-pagination style="margin-top:12px;justify-content:flex-end" v-model:current-page="pageNo" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50]" layout="total,sizes,prev,pager,next" @current-change="handleCurrentChange" @size-change="handleSizeChange" />
@@ -22,14 +22,14 @@
         <el-form-item label="班级名"><el-input v-model="form.className"/></el-form-item>
         <el-form-item label="所属专业"><el-tree-select v-model="form.deptId" :data="deptTree" :props="{label:'dept_name', value:'dept_id', children:'children'}" placeholder="选择专业" clearable check-strictly style="width:100%" /></el-form-item>
         <el-form-item label="年级"><el-input v-model="form.grade" type="number" placeholder="2024"/></el-form-item>
-        <el-form-item label="班主任"><el-select v-model="form.headTeacherId" placeholder="选择教师" clearable filterable style="width:100%"><el-option v-for="t in teacherOptions" :key="t.user_id" :label="`${t.user_name}${t.phone?' ('+t.phone+')':''}`" :value="t.user_id" /></el-select></el-form-item>
+        <el-form-item label="辅导员"><el-select v-model="form.headTeacherId" placeholder="选择辅导员（按所选专业过滤）" clearable filterable :disabled="!form.deptId" style="width:100%"><el-option v-for="c in filteredCounselors" :key="c.user_id" :label="`${c.user_name}${c.phone?' ('+c.phone+')':''} - ${deptMap[c.dept_id]||c.dept_id}`" :value="c.user_id" /></el-select><div v-if="!form.deptId" style="font-size:12px;color:#8a94a6;margin-top:4px">请先选择所属专业</div></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="submit">保存</el-button></template>
     </el-dialog>
   </el-card>
 </template>
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -37,11 +37,34 @@ const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChang
 fetch()
 const deptTree=ref<any[]>([])
 const deptMap=ref<Record<string,string>>({})
-async function loadDepts(){ const res:any=await request.get('/dept/tree'); deptTree.value=res.data||[]; const m:Record<string,string>={}; const dfs=(arr:any[])=>{ for(const d of arr){ m[d.dept_id]=d.dept_name; if(d.children) dfs(d.children) } }; dfs(deptTree.value); deptMap.value=m }
-const teacherOptions=ref<any[]>([])
-const teacherMap=ref<Record<string,string>>({})
-async function loadTeachers(){ const res:any=await request.post('/user/queryByPage', {pageNo:1,pageSize:100,data:{userType:'1'}}); const lst=res.data.list||[]; teacherOptions.value=lst; const m:Record<string,string>={}; for(const t of lst) m[t.user_id]=t.user_name; teacherMap.value=m }
-onMounted(()=>{ loadDepts(); loadTeachers() })
+const parentMap=ref<Record<string,number>>({})
+async function loadDepts(){
+  const res:any=await request.get('/dept/tree'); deptTree.value=res.data||[]
+  const m:Record<string,string>={}; const pm:Record<string,number>={}
+  const dfs=(arr:any[])=>{ for(const d of arr){ m[d.dept_id]=d.dept_name; pm[d.dept_id]=d.parent_id; if(d.children) dfs(d.children) } }
+  dfs(deptTree.value); deptMap.value=m; parentMap.value=pm
+}
+const counselorOptions=ref<any[]>([])
+const counselorMap=ref<Record<string,string>>({})
+async function loadCounselors(){
+  const res:any=await request.post('/user/queryByPage', {pageNo:1,pageSize:500,data:{userType:'8'}})
+  const lst=res.data.list||[]; counselorOptions.value=lst
+  const m:Record<string,string>={}; for(const c of lst) m[c.user_id]=c.user_name; counselorMap.value=m
+}
+const filteredCounselors=computed(()=>{
+  if(!form.deptId) return []
+  const deptId=Number(form.deptId)
+  const pid=parentMap.value[deptId]
+  const collegeId= pid===0 ? deptId : (pid||deptId)
+  // 辅导员dept为专业，取其所属学院
+  return counselorOptions.value.filter((c:any)=>{
+    const cDept=Number(c.dept_id)
+    const cPid=parentMap.value[cDept]
+    const cCollege=cPid===0? cDept : (cPid||cDept)
+    return cCollege===collegeId
+  })
+})
+onMounted(()=>{ loadDepts(); loadCounselors() })
 const dialog=ref(false)
 const form=reactive<any>({classId:'',className:'',deptId:'',grade:'',headTeacherId:''})
 function openEdit(row?:any){ if(row){ form.classId=row.class_id; form.className=row.class_name; form.deptId=row.dept_id; form.grade=row.grade; form.headTeacherId=row.head_teacher_id } else { form.classId=''; form.className=''; form.deptId=''; form.grade=''; form.headTeacherId='' } dialog.value=true }
