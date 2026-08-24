@@ -8,7 +8,7 @@
       <el-table-column prop="user_id" label="ID" width="90"/>
       <el-table-column prop="user_name" label="用户名" width="130"/>
       <el-table-column prop="phone" label="手机" width="140"/>
-      <el-table-column prop="user_type" label="类型" width="90"><template #default="{row}">{{ row.user_type==='0'?'管理员':row.user_type==='1'?'教师':'学生' }}</template></el-table-column>
+      <el-table-column prop="user_type" label="类型" width="100"><template #default="{row}">{{ typeMap[row.user_type] || row.user_type }}</template></el-table-column>
       <el-table-column label="院系" width="160"><template #default="{row}">{{ deptMap[row.dept_id] || (row.dept_id||'—') }}</template></el-table-column>
       <el-table-column prop="status" label="状态" width="80"><template #default="{row}"><el-tag :type="row.status==='0'?'success':'danger'">{{ row.status==='0'?'正常':'停用' }}</el-tag></template></el-table-column>
       <el-table-column label="操作" width="260"><template #default="{row}"><el-button size="small" @click="openEdit(row)">编辑</el-button><el-button size="small" type="warning" @click="openRole(row)">分配角色</el-button><el-button size="small" type="danger" @click="del(row)">停用</el-button></template></el-table-column>
@@ -21,7 +21,7 @@
         <el-form-item label="手机"><el-input v-model="form.phone"/></el-form-item>
         <el-form-item label="密码"><el-input v-model="form.password" placeholder="留空不改，默认123456" show-password/></el-form-item>
         <el-form-item label="院系"><el-tree-select v-model="form.deptId" :data="deptTree" :props="{label:'dept_name', value:'dept_id', children:'children'}" placeholder="选择院系（顶级为学院）" clearable check-strictly style="width:100%" /></el-form-item>
-        <el-form-item label="类型"><el-select v-model="form.userType"><el-option label="管理员" value="0"/><el-option label="教师" value="1"/><el-option label="学生" value="2"/></el-select></el-form-item>
+        <el-form-item label="类型"><el-select v-model="form.userType" placeholder="随角色管理联动"><el-option v-for="r in typeOptions" :key="r.value" :label="r.label" :value="r.value"/></el-select></el-form-item>
         <el-form-item label="状态"><el-select v-model="form.status"><el-option label="正常" value="0"/><el-option label="停用" value="1"/></el-select></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="submit">保存</el-button></template>
@@ -44,13 +44,34 @@ const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChang
 fetch()
 const deptTree=ref<any[]>([])
 const deptMap=ref<Record<string,string>>({})
+const typeOptions=ref<any[]>([{label:'管理员',value:'0'},{label:'教师',value:'1'},{label:'学生',value:'2'}])
+const typeMap=ref<Record<string,string>>({'0':'管理员','1':'教师','2':'学生'})
 async function loadDepts(){
   const res:any=await request.get('/dept/tree'); deptTree.value=res.data||[]
   const m:Record<string,string>={}
   const dfs=(arr:any[])=>{ for(const d of arr){ m[d.dept_id]=d.dept_name; if(d.children) dfs(d.children) } }
   dfs(deptTree.value); deptMap.value=m
 }
-onMounted(loadDepts)
+async function loadTypeOptions(){
+  try{
+    const res:any=await request.post('/role/queryByPage', {pageNo:1,pageSize:50,data:{}})
+    const lst=res?.data?.list ?? []
+    if(lst.length){
+      // 角色联动：用角色表驱动类型下拉，新增角色自动出现
+      typeOptions.value=lst.map((r:any)=> ({label:r.role_name, value:String(r.role_id)}))
+      // 同时建立映射用于表格显示
+      const m:Record<string,string>={}
+      for(const r of lst) m[String(r.role_id)]=r.role_name
+      // 保留 0/1/2 兼容旧数据
+      m['0']=m['1']? '管理员' : '管理员'
+      if(!m['1']) m['1']='教师'
+      if(!m['2']) m['2']='学生'
+      // 合并旧映射
+      typeMap.value={...{'0':'管理员','1':'教师','2':'学生'}, ...m}
+    }
+  }catch{}
+}
+onMounted(()=>{ loadDepts(); loadTypeOptions() })
 const dialog=ref(false)
 const form=reactive<any>({userId:'', userName:'', phone:'', password:'', deptId:'', userType:'0', status:'0'})
 function openEdit(row?:any){ if(row){ form.userId=row.user_id; form.userName=row.user_name; form.phone=row.phone; form.password=''; form.deptId=row.dept_id; form.userType=row.user_type; form.status=row.status } else { form.userId=''; form.userName=''; form.phone=''; form.password=''; form.deptId=''; form.userType='0'; form.status='0' } dialog.value=true }
