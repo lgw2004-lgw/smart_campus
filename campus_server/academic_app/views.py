@@ -578,7 +578,7 @@ class ClassQueryByPageView(BaseView):
         if data.get('className'):
             qs = qs.filter(class_name__icontains=data['className'])
         total = qs.count()
-        lst = list(qs[(page_no-1)*page_size: page_no*page_size].values())
+        lst = list(qs.order_by('head_teacher_id','class_name')[(page_no-1)*page_size: page_no*page_size].values())
         return page_response(lst, total, page_no, page_size)
 
 class ClassSaveView(BaseView):
