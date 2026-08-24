@@ -51,7 +51,12 @@
         <el-form-item label="健康信息"><el-input type="textarea" v-model="fileForm.healthInfo" :rows="2"/></el-form-item>
         <el-form-item label="奖惩"><el-input type="textarea" v-model="fileForm.awardPunish" :rows="2"/></el-form-item>
         <el-form-item label="备注"><el-input v-model="fileForm.remark"/></el-form-item>
-        <el-form-item label="紧急联系人"><el-input v-model="fileForm.emergencyContact"/></el-form-item>
+        <el-form-item label="紧急联系人">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-input v-model="fileForm.emergencyContact" placeholder="联系人：如 张父" style="flex:1"/>
+            <el-input v-model="fileForm.emergencyPhone" placeholder="电话：如 13800001234" style="flex:1"/>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer><el-button @click="fileDialog=false">取消</el-button><el-button type="primary" @click="saveFile">保存档案</el-button></template>
     </el-dialog>
@@ -144,7 +149,7 @@ function onIdCardBlur(){ if(form.idCard && form.idCard.length===18) checkIdCardB
 
 // 档案
 const fileDialog=ref(false)
-const fileForm=reactive<any>({studentId:'', familyMembers:[{member:'', relation:''}], healthInfo:'', awardPunish:'', remark:'', emergencyContact:''})
+const fileForm=reactive<any>({studentId:'', familyMembers:[{member:'', relation:''}], healthInfo:'', awardPunish:'', remark:'', emergencyContact:'', emergencyPhone:''})
 let curStuId=''
 function addFamilyMember(){ fileForm.familyMembers.push({member:'', relation:''}) }
 function removeFamilyMember(idx:number){ if(fileForm.familyMembers.length>1) fileForm.familyMembers.splice(idx,1) }
@@ -163,12 +168,12 @@ async function openFile(row:any){
   const d=res.data||{}
   fileForm.studentId=curStuId
   fileForm.familyMembers=parseFamilyInfo(d.family_info||'')
-  fileForm.healthInfo=d.health_info||''; fileForm.awardPunish=d.award_punish||''; fileForm.remark=d.remark||''; fileForm.emergencyContact=d.emergency_contact||''; fileDialog.value=true
+  fileForm.healthInfo=d.health_info||''; fileForm.awardPunish=d.award_punish||''; fileForm.remark=d.remark||''; fileForm.emergencyContact=d.emergency_contact||''; fileForm.emergencyPhone=d.emergency_phone||''; fileDialog.value=true
 }
 async function saveFile(){
   const clean=fileForm.familyMembers.filter((m:any)=> m.member.trim()||m.relation.trim())
   const familyInfo = clean.length? JSON.stringify(clean) : ''
-  await request.put('/studentFile/add', {studentId:curStuId, familyInfo, healthInfo:fileForm.healthInfo, awardPunish:fileForm.awardPunish, remark:fileForm.remark, emergencyContact:fileForm.emergencyContact})
+  await request.put('/studentFile/add', {studentId:curStuId, familyInfo, healthInfo:fileForm.healthInfo, awardPunish:fileForm.awardPunish, remark:fileForm.remark, emergencyContact:fileForm.emergencyContact, emergencyPhone:fileForm.emergencyPhone})
   ElMessage.success('档案已保存'); fileDialog.value=false
 }
 </script>

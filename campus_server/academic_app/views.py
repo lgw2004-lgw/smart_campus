@@ -26,7 +26,7 @@ class StudentQueryByIdView(BaseView):
             try:
                 from .models import StuStudentFile
                 f=StuStudentFile.objects.get(student_id=student_id)
-                data.update({k: getattr(f,k) for k in ['family_info','health_info','award_punish','remark','emergency_contact']})
+                data.update({k: getattr(f,k) for k in ['family_info','health_info','award_punish','remark','emergency_contact','emergency_phone']})
             except: pass
             # 学院/专业名
             try:
@@ -117,6 +117,7 @@ class StudentFileAddView(BaseView):
             'award_punish': body.get('awardPunish') or body.get('award_punish'),
             'remark': body.get('remark'),
             'emergency_contact': body.get('emergencyContact') or body.get('emergency_contact'),
+            'emergency_phone': body.get('emergencyPhone') or body.get('emergency_phone'),
         }
         obj, created = StuStudentFile.objects.update_or_create(student_id=sid, defaults=defaults)
         return success({"studentId": sid})
@@ -128,7 +129,7 @@ class StudentFileQueryView(BaseView):
     def get(self, request, stu_id):
         try:
             f = StuStudentFile.objects.get(student_id=stu_id)
-            return success({k: getattr(f,k) for k in ['student_id','family_info','health_info','award_punish','remark','emergency_contact','update_time']})
+            return success({k: getattr(f,k) for k in ['student_id','family_info','health_info','award_punish','remark','emergency_contact','emergency_phone','update_time']})
         except StuStudentFile.DoesNotExist:
             return success({})
 

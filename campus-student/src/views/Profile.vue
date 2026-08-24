@@ -27,6 +27,7 @@
           <el-descriptions-item label="奖惩">{{ data.award_punish || '-' }}</el-descriptions-item>
           <el-descriptions-item label="备注">{{ data.remark || '-' }}</el-descriptions-item>
           <el-descriptions-item label="紧急联系人">{{ data.emergency_contact || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="紧急电话">{{ data.emergency_phone || '-' }}</el-descriptions-item>
         </el-descriptions>
       </div>
     </el-card>

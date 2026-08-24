@@ -24,6 +24,7 @@ class StuStudentFile(models.Model):
     award_punish = models.TextField(null=True)
     remark = models.TextField(null=True)
     emergency_contact = models.CharField(max_length=30, null=True)
+    emergency_phone = models.CharField(max_length=20, null=True)
     update_time = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
