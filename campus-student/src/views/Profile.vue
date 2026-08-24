@@ -15,14 +15,17 @@
           <el-descriptions-item label="入学年份">{{ data.enroll_year }}</el-descriptions-item>
           <el-descriptions-item label="归档">{{ data.is_final==='1'?'已归档':'在校' }}</el-descriptions-item>
         </el-descriptions>
-        <el-divider>档案信息</el-divider>
-        <el-descriptions :column="1" border>
-          <el-descriptions-item label="家庭信息">{{ data.family_info || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="健康信息">{{ data.health_info || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="奖惩">{{ data.award_punish || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="备注">{{ data.remark || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="紧急联系人">{{ data.emergency_contact || '-' }}</el-descriptions-item>
-        </el-descriptions>
+        <template v-if="data.family_info || data.health_info || data.award_punish || data.remark || data.emergency_contact">
+          <el-divider>档案信息（后台补全）</el-divider>
+          <el-descriptions :column="1" border>
+            <el-descriptions-item v-if="data.family_info" label="家庭信息">{{ data.family_info }}</el-descriptions-item>
+            <el-descriptions-item v-if="data.health_info" label="健康信息">{{ data.health_info }}</el-descriptions-item>
+            <el-descriptions-item v-if="data.award_punish" label="奖惩">{{ data.award_punish }}</el-descriptions-item>
+            <el-descriptions-item v-if="data.remark" label="备注">{{ data.remark }}</el-descriptions-item>
+            <el-descriptions-item v-if="data.emergency_contact" label="紧急联系人">{{ data.emergency_contact }}</el-descriptions-item>
+          </el-descriptions>
+        </template>
+        <div v-else style="margin-top:12px;color:#8a94a6;font-size:12px">档案信息暂未录入 · 请管理员在后台“学生管理-学生档案-档案”按钮补全家庭/健康/奖惩等</div>
       </div>
     </el-card>
   </div>
