@@ -1,8 +1,13 @@
 <template>
   <el-card>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <h3>用户管理 · user.vue → /user/insertOrUpdate → /user/save 分配角色</h3>
-      <div><el-input v-model="query.userName" placeholder="用户名" clearable style="width:160px;margin-right:8px"/><el-button type="primary" @click="search">查询</el-button><el-button type="success" @click="openEdit()">新增用户</el-button></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <el-input v-model="query.userName" placeholder="用户名" clearable style="width:140px"/>
+        <el-select v-model="query.userType" placeholder="类型" clearable style="width:140px"><el-option v-for="o in typeOptions" :key="o.value" :label="o.label" :value="o.value"/></el-select>
+        <el-tree-select v-model="query.deptId" :data="deptTree" :props="{label:'dept_name', value:'dept_id', children:'children'}" placeholder="院系" clearable check-strictly style="width:200px" />
+        <el-button type="primary" @click="search">查询</el-button><el-button type="success" @click="openEdit()">新增用户</el-button>
+      </div>
     </div>
     <el-table :data="list" v-loading="loading" border>
       <el-table-column prop="user_id" label="ID" width="70"/>
@@ -45,7 +50,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
-const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChange, handleSizeChange, search } = usePage('/user/queryByPage', {userName:''})
+const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChange, handleSizeChange, search } = usePage('/user/queryByPage', {userName:'', userType:'', deptId:''} as any)
 fetch()
 const deptTree=ref<any[]>([])
 const deptMap=ref<Record<string,string>>({})
