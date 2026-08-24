@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
     UserQueryByPageView, UserInsertOrUpdateView, UserSaveView, UserDeleteView,
-    RoleQueryByPageView, RoleSaveView, RoleDeleteView, RoleMenuAddView,     MenuTreeView, MenuSaveView, MenuDeleteView,
+    RoleQueryByPageView, RoleSaveView, RoleDeleteView, RoleMenuAddView, RoleMenuQueryView, MenuTreeView, MenuSaveView, MenuDeleteView,
     DeptQueryByPageView, DeptTreeView, DeptSaveView, DeptDeleteView,
     DictTypeQueryView, DictDataQueryView, DictDataByTypeView,
     NoticeQueryView, NoticeSaveView, NoticeDeleteView, NewsQueryView, BannerQueryView, BannerSaveView, BannerUploadView, BannerDeleteView, BannerLoadView,
@@ -20,6 +20,7 @@ urlpatterns = [
     path('role/delete/<int:role_id>', RoleDeleteView.as_view()),
     path('role/delete', RoleDeleteView.as_view()),
     path('role/roleMenu/add', RoleMenuAddView.as_view()),
+    path('role/roleMenu/query', RoleMenuQueryView.as_view()),
     path('menu/queryTreeDataByUserId', MenuTreeView.as_view()),
     path('menu/save', MenuSaveView.as_view()),
     path('menu/delete/<int:menu_id>', MenuDeleteView.as_view()),

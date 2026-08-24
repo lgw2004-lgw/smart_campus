@@ -2,7 +2,15 @@
   <el-container style="height:100vh">
     <el-aside width="220px" style="background:#001529;overflow:auto">
       <div style="color:#fff;text-align:center;padding:16px;font-size:18px;font-weight:bold">智慧校园</div>
-      <el-menu router :default-active="$route.path" background-color="#001529" text-color="#ccc" active-text-color="#409EFF" unique-opened>
+      <el-menu v-if="menus.length" router :default-active="$route.path" background-color="#001529" text-color="#ccc" active-text-color="#409EFF" unique-opened>
+        <template v-for="m in menus" :key="m.menu_id">
+          <el-menu-item v-if="!m.children || !m.children.length" :index="m.path"><el-icon><component :is="m.icon || 'Menu'" /></el-icon>{{ m.menu_name }}</el-menu-item>
+          <el-sub-menu v-else :index="m.path || String(m.menu_id)"><template #title><el-icon><component :is="m.icon || 'Menu'" /></el-icon>{{ m.menu_name }}</template>
+            <el-menu-item v-for="c in m.children" :key="c.menu_id" :index="c.path">{{ c.menu_name }}</el-menu-item>
+          </el-sub-menu>
+        </template>
+      </el-menu>
+      <el-menu v-else router :default-active="$route.path" background-color="#001529" text-color="#ccc" active-text-color="#409EFF" unique-opened>
         <el-menu-item index="/home"><el-icon><House /></el-icon>首页看板</el-menu-item>
         <el-sub-menu index="/academic"><template #title><el-icon><Reading /></el-icon>教务管理</template>
           <el-menu-item index="/academic/course">课程管理</el-menu-item>
@@ -46,12 +54,24 @@
   </el-container>
 </template>
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
+import request from '@/utils/request'
 const auth = useAuthStore()
 const router = useRouter()
 function logout() {
   auth.logout()
   router.push('/login')
 }
+const menus=ref<any[]>([])
+async function loadMenus(){
+  try{
+    const uid=auth.userId || localStorage.getItem('userId')
+    const res:any=await request.get('/menu/queryTreeDataByUserId', {params: uid?{userId:uid}:{}})
+    if(res?.data?.length) menus.value=res.data
+    else menus.value=[]
+  }catch{ menus.value=[] }
+}
+onMounted(loadMenus)
 </script>

@@ -37,7 +37,7 @@
   </el-card>
 </template>
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, nextTick } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -100,10 +100,17 @@ async function openMenu(row:any){
   const res:any = await request.get('/menu/queryTreeDataByUserId')
   menus.value=res.data||[]
   dialog.value=true
+  // 回显已分配菜单
+  try{
+    const r:any = await request.get('/role/roleMenu/query', {params:{roleId:curRoleId}})
+    const ids=r?.data||[]
+    await nextTick()
+    treeRef.value?.setCheckedKeys(ids)
+  }catch{}
 }
 async function save(){
   const ids = treeRef.value.getCheckedKeys().concat(treeRef.value.getHalfCheckedKeys())
   await request.post('/role/roleMenu/add', {roleId:curRoleId, menuIds:ids})
-  ElMessage.success('已分配菜单'); dialog.value=false
+  ElMessage.success('已分配菜单，刷新页面或重新登录后生效'); dialog.value=false
 }
 </script>

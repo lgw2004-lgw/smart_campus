@@ -228,6 +228,15 @@ class RoleMenuAddView(BaseView):
             SysRoleMenu.objects.create(role_id=role_id, menu_id=mid)
         return success()
 
+class RoleMenuQueryView(BaseView):
+    """GET /role/roleMenu/query?roleId=  返回该角色已分配菜单ID列表"""
+    def get(self, request):
+        role_id = request.GET.get('roleId') or request.GET.get('role_id')
+        if not role_id:
+            return error("roleId 不能为空", code=400)
+        menu_ids = list(SysRoleMenu.objects.filter(role_id=role_id).values_list('menu_id', flat=True))
+        return success(menu_ids)
+
 # -------- 菜单 --------
 class MenuTreeView(BaseView):
     """GET /menu/queryTreeDataByUserId?userId="""
