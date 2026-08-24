@@ -27,7 +27,7 @@ class UserQueryByPageView(BaseView):
             except:
                 pass
         total = qs.count()
-        lst = list(qs.order_by('-create_time')[(page_no-1)*page_size: page_no*page_size].values())
+        lst = list(qs.order_by('user_id')[(page_no-1)*page_size: page_no*page_size].values())
         return page_response(lst, total, page_no, page_size)
 
 class UserInsertOrUpdateView(BaseView):
