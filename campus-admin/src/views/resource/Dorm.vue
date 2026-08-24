@@ -28,13 +28,14 @@
 
     <el-card shadow="never" style="margin-top:14px">
       <template #header><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600">楼栋列表</span><span style="font-size:12px;color:#999">{{ buildingOptions.length }}栋</span></div></template>
-      <el-table :data="buildingOptions" border size="small">
+      <el-table :data="buildingPaged" border size="small">
         <el-table-column prop="building_id" label="楼栋ID" width="90"/>
         <el-table-column prop="building_name" label="楼栋名"/>
         <el-table-column prop="floors" label="层数" width="80"/>
         <el-table-column prop="status" label="状态" width="80"/>
         <el-table-column label="操作" width="140"><template #default="{row}"><el-button size="small" type="danger" @click="doDeleteBuilding(row)">删除</el-button></template></el-table-column>
       </el-table>
+      <el-pagination style="margin-top:10px;justify-content:flex-end" v-model:current-page="buildingPageNo" v-model:page-size="buildingPageSize" :total="buildingOptions.length" :page-sizes="[10,20,50]" layout="total,sizes,prev,pager,next" />
     </el-card>
 
     <el-dialog v-model="dialogRoom" :title="roomForm.roomId?'编辑房间':'新增房间'" width="480">
@@ -83,7 +84,7 @@
   </el-card>
 </template>
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -92,9 +93,16 @@ fetch()
 
 const buildingOptions=ref<any[]>([])
 const buildingMap=ref<Record<string,string>>({})
+const buildingPageNo=ref(1)
+const buildingPageSize=ref(10)
+const buildingPaged=computed(()=> {
+  const start=(buildingPageNo.value-1)*buildingPageSize.value
+  return buildingOptions.value.slice(start, start+buildingPageSize.value)
+})
 async function loadBuildings(){
   const res:any=await request.post('/building/queryByPage', {pageNo:1,pageSize:200,data:{}})
   buildingOptions.value=res.data.list||[]
+  buildingPageNo.value=1
   const m:Record<string,string>={}; for(const b of buildingOptions.value) m[b.building_id]=b.building_name; buildingMap.value=m
 }
 onMounted(loadBuildings)
