@@ -25,7 +25,7 @@
         <el-form-item label="用户名"><el-input v-model="form.userName"/></el-form-item>
         <el-form-item label="手机"><el-input v-model="form.phone"/></el-form-item>
         <el-form-item label="密码"><el-input v-model="form.password" placeholder="留空不改，默认123456" show-password/></el-form-item>
-        <el-form-item label="院系"><el-tree-select v-model="form.deptId" :data="deptTree" :props="{label:'dept_name', value:'dept_id', children:'children'}" placeholder="选择院系（顶级为学院）" clearable check-strictly style="width:100%" /></el-form-item>
+        <el-form-item label="院系"><el-tree-select v-model="form.deptId" :data="deptTree" :props="{label:'dept_name', value:'dept_id', children:'children'}" :placeholder="isSuperAdmin?'超级管理员不属于任何院系': '选择院系（顶级为学院）'" clearable check-strictly :disabled="isSuperAdmin" style="width:100%" /></el-form-item>
         <el-form-item label="类型"><el-select v-model="form.userType" placeholder="随角色管理联动"><el-option v-for="r in typeOptions" :key="r.value" :label="r.label" :value="r.value"/></el-select></el-form-item>
         <el-form-item label="状态"><el-select v-model="form.status"><el-option label="正常" value="0"/><el-option label="停用" value="1"/></el-select></el-form-item>
       </el-form>
@@ -86,7 +86,7 @@ const workNoRuleTip=computed(()=>{
   const cid=form.deptId? String(form.deptId).padStart(4,'0') : '学院0001'
   return `${cid}+00001 如 000100001`
 })
-watch(()=> form.userType, (v)=>{ if(String(v)==='1') form.workNo='0' })
+watch(()=> form.userType, (v)=>{ if(String(v)==='1'){ form.workNo='0'; form.deptId='' } })
 function openEdit(row?:any){
   if(row){
     form.userId=row.user_id; form.workNo=row.work_no||''; form.userName=row.user_name; form.phone=row.phone; form.password=''; form.deptId=row.dept_id; form.userType=row.user_type; form.status=row.status

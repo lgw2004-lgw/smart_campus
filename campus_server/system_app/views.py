@@ -95,23 +95,25 @@ class UserInsertOrUpdateView(BaseView):
             return f"{prefix}{(max_seq+1):05d}"
 
         if user_id:
-            # 超级管理员工号不可改
             existing=SysUser.objects.filter(user_id=user_id).first()
+            # admin去院系：超级管理员强制 dept=None、工号0
             if existing and is_super_admin(existing.user_type):
                 work_no='0'
+                dept_id_int=None
+                dept_id_raw=None
+            elif is_super_admin(user_type):
+                work_no='0'
+                dept_id_int=None
+                dept_id_raw=None
             elif not work_no:
                 # 编辑时若未传则保持原值
                 work_no=None
             else:
-                # 若传了则校验唯一
                 if SysUser.objects.filter(work_no=work_no).exclude(user_id=user_id).exists():
                     return error("工号已存在", code=400)
-                # 若为空则自动生成
                 if not work_no:
                     work_no=gen_work_no(user_type or (existing.user_type if existing else ''), dept_id_int)
-            # 若仍无则自动生成
             if work_no is None and existing:
-                # 保留原
                 pass
             elif work_no is None:
                 work_no=gen_work_no(user_type, dept_id_int)
@@ -124,6 +126,9 @@ class UserInsertOrUpdateView(BaseView):
                 upd['phone']=body.get('phone')
             if dept_id_raw is not None:
                 upd['dept_id']=dept_id_int
+            # admin去院系：强制置空
+            if is_super_admin(user_type) or (existing and is_super_admin(existing.user_type)):
+                upd['dept_id']=None
             if body.get('status') is not None:
                 upd['status']=body.get('status')
             if body.get('userType') is not None or body.get('user_type') is not None:
@@ -136,9 +141,10 @@ class UserInsertOrUpdateView(BaseView):
                 u.save(update_fields=['password'])
             return success({"userId": user_id, "workNo": work_no or existing.work_no if 'existing' in locals() and existing else work_no})
         # 新增
-        # 超级管理员定死0
+        # 超级管理员定死0且去院系
         if is_super_admin(user_type):
             work_no='0'
+            dept_id_int=None
             if SysUser.objects.filter(work_no='0').exists():
                 return error("超级管理员已存在，工号0不可重复", code=400)
         elif not work_no:
