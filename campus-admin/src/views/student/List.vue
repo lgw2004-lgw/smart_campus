@@ -85,7 +85,7 @@ async function loadDepts(){
   deptMap.value=m; parentMap.value=pm
 }
 async function loadClasses(){
-  const res:any=await request.post('/class/queryByPage', {pageNo:1,pageSize:100,data:{}})
+  const res:any=await request.post('/class/queryByPage', {pageNo:1,pageSize:500,data:{}})
   const lst=res.data.list||[]
   classOptions.value=lst
   const m:Record<string,string>={}
