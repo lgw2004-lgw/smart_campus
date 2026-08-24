@@ -4,6 +4,7 @@ class SysUser(models.Model):
     user_id = models.BigAutoField(primary_key=True)
     dept_id = models.BigIntegerField(null=True)
     user_name = models.CharField(max_length=30, unique=True)
+    work_no = models.CharField(max_length=20, null=True, unique=True, help_text='工号')
     user_type = models.CharField(max_length=1, default='0', help_text='0管理员 1教师 2学生')
     phone = models.CharField(max_length=11, null=True, unique=True)
     password = models.CharField(max_length=255, default='123456')

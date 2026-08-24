@@ -5,9 +5,10 @@
       <div><el-input v-model="query.userName" placeholder="用户名" clearable style="width:160px;margin-right:8px"/><el-button type="primary" @click="search">查询</el-button><el-button type="success" @click="openEdit()">新增用户</el-button></div>
     </div>
     <el-table :data="list" v-loading="loading" border>
-      <el-table-column prop="user_id" label="ID" width="90"/>
-      <el-table-column prop="user_name" label="用户名" width="130"/>
-      <el-table-column prop="phone" label="手机" width="140"/>
+      <el-table-column prop="user_id" label="ID" width="70"/>
+      <el-table-column prop="work_no" label="工号" width="110"/>
+      <el-table-column prop="user_name" label="用户名" width="120"/>
+      <el-table-column prop="phone" label="手机" width="130"/>
       <el-table-column prop="user_type" label="类型" width="100"><template #default="{row}">{{ typeMap[row.user_type] || row.user_type }}</template></el-table-column>
       <el-table-column label="院系" width="160"><template #default="{row}">{{ deptMap[row.dept_id] || (row.dept_id||'—') }}</template></el-table-column>
       <el-table-column prop="status" label="状态" width="80"><template #default="{row}"><el-tag :type="row.status==='0'?'success':'danger'">{{ row.status==='0'?'正常':'停用' }}</el-tag></template></el-table-column>
@@ -17,6 +18,7 @@
 
     <el-dialog v-model="dialog" :title="form.userId?'编辑用户':'新增用户'" width="520">
       <el-form :model="form" label-width="80px">
+        <el-form-item label="工号"><el-input v-model="form.workNo" placeholder="如 ADM001，留空自动生成 GHxxxx"/></el-form-item>
         <el-form-item label="用户名"><el-input v-model="form.userName"/></el-form-item>
         <el-form-item label="手机"><el-input v-model="form.phone"/></el-form-item>
         <el-form-item label="密码"><el-input v-model="form.password" placeholder="留空不改，默认123456" show-password/></el-form-item>
@@ -73,9 +75,9 @@ async function loadTypeOptions(){
 }
 onMounted(()=>{ loadDepts(); loadTypeOptions() })
 const dialog=ref(false)
-const form=reactive<any>({userId:'', userName:'', phone:'', password:'', deptId:'', userType:'0', status:'0'})
-function openEdit(row?:any){ if(row){ form.userId=row.user_id; form.userName=row.user_name; form.phone=row.phone; form.password=''; form.deptId=row.dept_id; form.userType=row.user_type; form.status=row.status } else { form.userId=''; form.userName=''; form.phone=''; form.password=''; form.deptId=''; form.userType='0'; form.status='0' } dialog.value=true }
-async function submit(){ await request.post('/user/insertOrUpdate', {userId:form.userId||undefined, userName:form.userName, phone:form.phone, password:form.password||undefined, deptId:form.deptId?Number(form.deptId):null, userType:form.userType, status:form.status}); ElMessage.success('保存成功'); dialog.value=false; fetch() }
+const form=reactive<any>({userId:'', workNo:'', userName:'', phone:'', password:'', deptId:'', userType:'0', status:'0'})
+function openEdit(row?:any){ if(row){ form.userId=row.user_id; form.workNo=row.work_no||''; form.userName=row.user_name; form.phone=row.phone; form.password=''; form.deptId=row.dept_id; form.userType=row.user_type; form.status=row.status } else { form.userId=''; form.workNo=''; form.userName=''; form.phone=''; form.password=''; form.deptId=''; form.userType='0'; form.status='0' } dialog.value=true }
+async function submit(){ await request.post('/user/insertOrUpdate', {userId:form.userId||undefined, workNo:form.workNo||undefined, userName:form.userName, phone:form.phone, password:form.password||undefined, deptId:form.deptId?Number(form.deptId):null, userType:form.userType, status:form.status}); ElMessage.success('保存成功'); dialog.value=false; fetch() }
 async function del(row:any){ await request.post(`/user/delete/${row.user_id}`); ElMessage.success('已停用'); fetch() }
 const roleDialog=ref(false); const roles=ref<any[]>([]); const roleIds=ref<number[]>([]); let curUserId:any=null
 async function openRole(row:any){ curUserId=row.user_id; const res:any = await request.post('/role/queryByPage', {pageNo:1,pageSize:20,data:{}}); roles.value=res.data.list||[]; roleIds.value=[]; roleDialog.value=true }

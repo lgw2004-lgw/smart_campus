@@ -4,11 +4,11 @@
       <h2 style="text-align:center">智慧校园 · 管理后台</h2>
       <p style="text-align:center;color:#999;font-size:12px">仅限学校领导/教师登录 · 学生请前往 C端 5174</p>
       <el-form :model="form" @submit.prevent="onLogin">
-        <el-form-item><el-input v-model="form.userName" placeholder="用户名" prefix-icon="User" /></el-form-item>
+        <el-form-item><el-input v-model="form.workNo" placeholder="工号" prefix-icon="User" /></el-form-item>
         <el-form-item><el-input v-model="form.password" type="password" placeholder="密码 123456" prefix-icon="Lock" show-password /></el-form-item>
         <el-form-item><el-button type="primary" native-type="submit" :loading="loading" style="width:100%">登录管理后台</el-button></el-form-item>
       </el-form>
-      <div style="font-size:12px;color:#999;text-align:center">admin/123456 | teacher01/123456<br/>学生请访问 http://127.0.0.1:5174</div>
+      <div style="font-size:12px;color:#999;text-align:center">ADM001/123456 | GH0006/123456<br/>学生请访问 http://127.0.0.1:5174</div>
     </el-card>
   </div>
 </template>
@@ -21,12 +21,12 @@ import { ElMessage } from 'element-plus'
 const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
-const form = reactive({ userName: 'admin', password: '123456' })
+const form = reactive({ workNo: 'ADM001', password: '123456' })
 
 async function onLogin() {
   loading.value = true
   try {
-    const data:any = await auth.login(form.userName, form.password, false)
+    const data:any = await auth.login(form.workNo, form.password, false)
     // 后台仅允许管理/教师（userType 0/1），学生禁止
     if(data.userType==='2' || data.userType===2){
       auth.logout()

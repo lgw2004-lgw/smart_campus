@@ -9,7 +9,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(userNameVal: string, password: string, isStudent = false) {
     const url = isStudent ? '/memberAuth/login' : '/userAuth/login'
-    const res: any = await request.get(url, { params: { userName: userNameVal, password } })
+    const res: any = await request.get(url, { params: { workNo: userNameVal, userName: userNameVal, password } })
     const data = res.data
     token.value = data.token
     userName.value = data.userName

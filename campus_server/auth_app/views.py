@@ -6,16 +6,22 @@ from academic_app.models import StuStudent
 import datetime
 
 class UserAuthLoginView(BaseView):
-    """GET /userAuth/login?userName=&password="""
+    """GET /userAuth/login?workNo=&userName=&password= 工号优先，兼容用户名"""
     def get(self, request):
-        user_name = request.GET.get('userName') or request.GET.get('user_name') or request.GET.get('username')
+        user_input = request.GET.get('workNo') or request.GET.get('work_no') or request.GET.get('userName') or request.GET.get('user_name') or request.GET.get('username') or ''
         password = request.GET.get('password') or ''
-        if not user_name or not password:
-            return error("用户名或密码不能为空", code=400)
+        if not user_input or not password:
+            return error("工号或密码不能为空", code=400)
+        # 优先按工号查，兼容按用户名
+        user=None
         try:
-            user = SysUser.objects.get(user_name=user_name)
+            user = SysUser.objects.get(work_no=user_input)
         except SysUser.DoesNotExist:
-            return error("用户不存在", code=401)
+            try:
+                user = SysUser.objects.get(user_name=user_input)
+            except SysUser.DoesNotExist:
+                return error("用户不存在", code=401)
+        user_name=user.user_name
         if user.del_flag == '1' or user.status == '1':
             return error("账号已停用", code=403)
         # 兼容 bcrypt 与明文（初始数据 123456）

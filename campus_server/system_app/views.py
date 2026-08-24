@@ -34,31 +34,50 @@ class UserInsertOrUpdateView(BaseView):
     def post(self, request):
         body = self.parse_body(request)
         user_id = body.get('userId') or body.get('user_id')
+        work_no = body.get('workNo') or body.get('work_no')
         if user_id:
-            SysUser.objects.filter(user_id=user_id).update(
-                user_name=body.get('userName', body.get('user_name')),
-                phone=body.get('phone'),
-                dept_id=body.get('deptId') or body.get('dept_id'),
-                status=body.get('status','0'),
-                user_type=body.get('userType') or body.get('user_type') or '0',
-            )
+            # 工号唯一校验
+            if work_no and SysUser.objects.filter(work_no=work_no).exclude(user_id=user_id).exists():
+                return error("工号已存在", code=400)
+            upd={}
+            if body.get('userName') is not None or body.get('user_name') is not None:
+                upd['user_name']=body.get('userName', body.get('user_name'))
+            if work_no is not None:
+                upd['work_no']=work_no
+            if body.get('phone') is not None:
+                upd['phone']=body.get('phone')
+            if body.get('deptId') is not None or body.get('dept_id') is not None:
+                upd['dept_id']=body.get('deptId') or body.get('dept_id')
+            if body.get('status') is not None:
+                upd['status']=body.get('status')
+            if body.get('userType') is not None or body.get('user_type') is not None:
+                upd['user_type']=body.get('userType') or body.get('user_type')
+            if upd:
+                SysUser.objects.filter(user_id=user_id).update(**upd)
             if body.get('password'):
                 u = SysUser.objects.get(user_id=user_id)
                 u.password = hash_password(body['password'])
                 u.save(update_fields=['password'])
             return success({"userId": user_id})
         # 新增
+        if work_no and SysUser.objects.filter(work_no=work_no).exists():
+            return error("工号已存在", code=400)
         pwd = body.get('password') or '123456'
         hashed = hash_password(pwd) if len(pwd) < 50 else pwd
         u = SysUser.objects.create(
             user_name=body['userName'],
+            work_no=work_no,
             phone=body.get('phone'),
             dept_id=body.get('deptId'),
             user_type=body.get('userType','0'),
             password=hashed,
             status=body.get('status','0'),
         )
-        return success({"userId": u.user_id})
+        # 若未传工号自动生成 GH+id
+        if not u.work_no:
+            u.work_no=f"GH{u.user_id:04d}"
+            u.save(update_fields=['work_no'])
+        return success({"userId": u.user_id, "workNo": u.work_no})
 
 class UserSaveView(BaseView):
     """POST /user/save 分配角色 {userId, roleIds:[]}"""
