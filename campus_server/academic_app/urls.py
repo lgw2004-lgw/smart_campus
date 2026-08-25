@@ -11,6 +11,12 @@ from .views import (
     ClassQueryByPageView, ClassSaveView, ClassDeleteView,
     ClassroomQueryByPageView, ClassroomSaveView, ClassroomDeleteView,
     PlanQueryByMajorView, PlanSaveView, PlanDeleteView, PlanStudentView,
+    AttendanceSessionCreateView, AttendanceSessionCloseView, AttendanceSessionQueryView, AttendanceSignInView, AttendanceMyStatsView,
+    ExamSignupAddView, ExamSignupPayConfirmView, ExamSignupCancelView, ExamSignupQueryByPageView,
+    WarningComputeView, WarningQueryByPageView, WarningHandleView, WarningMyView,
+    EvaluationSaveView, EvaluationPendingView, EvaluationStatsView, EvaluationDetailView,
+    LeaveApplyView, LeaveCancelView, LeaveApproveView, LeaveQueryByPageView,
+    ScoreExportView, EnrollmentRosterExportView,
 )
 
 urlpatterns = [
@@ -81,4 +87,34 @@ urlpatterns = [
     path('plan/delete/<int:plan_id>', PlanDeleteView.as_view()),
     path('plan/delete', PlanDeleteView.as_view()),
     path('plan/queryStudentPlan', PlanStudentView.as_view()),
+
+    path('attendance/session/create', AttendanceSessionCreateView.as_view()),
+    path('attendance/session/close/<int:session_id>', AttendanceSessionCloseView.as_view()),
+    path('attendance/session/close', AttendanceSessionCloseView.as_view()),
+    path('attendance/session/queryByPage', AttendanceSessionQueryView.as_view()),
+    path('attendance/signIn', AttendanceSignInView.as_view()),
+    path('attendance/myStats', AttendanceMyStatsView.as_view()),
+
+    path('examSignup/add', ExamSignupAddView.as_view()),
+    path('examSignup/payConfirm/<str:signup_id>', ExamSignupPayConfirmView.as_view()),
+    path('examSignup/cancel/<str:signup_id>', ExamSignupCancelView.as_view()),
+    path('examSignup/queryByPage', ExamSignupQueryByPageView.as_view()),
+
+    path('warning/compute', WarningComputeView.as_view()),
+    path('warning/queryByPage', WarningQueryByPageView.as_view()),
+    path('warning/handle/<int:wid>', WarningHandleView.as_view()),
+    path('warning/my', WarningMyView.as_view()),
+
+    path('evaluation/save', EvaluationSaveView.as_view()),
+    path('evaluation/pending', EvaluationPendingView.as_view()),
+    path('evaluation/queryByPage', EvaluationStatsView.as_view()),
+    path('evaluation/detail', EvaluationDetailView.as_view()),
+
+    path('leave/apply', LeaveApplyView.as_view()),
+    path('leave/cancel/<str:leave_id>', LeaveCancelView.as_view()),
+    path('leave/approve', LeaveApproveView.as_view()),
+    path('leave/queryByPage', LeaveQueryByPageView.as_view()),
+
+    path('score/export', ScoreExportView.as_view()),
+    path('enrollment/export', EnrollmentRosterExportView.as_view()),
 ]

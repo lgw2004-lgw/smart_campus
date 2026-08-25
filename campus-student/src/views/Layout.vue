@@ -42,6 +42,11 @@
           <el-menu-item index="/my-enroll"><el-icon><List /></el-icon>我的选课</el-menu-item>
           <el-menu-item index="/timetable"><el-icon><Calendar /></el-icon>我的课表</el-menu-item>
           <el-menu-item index="/my-exam"><el-icon><EditPen /></el-icon>考试信息</el-menu-item>
+          <el-menu-item index="/my-attendance"><el-icon><Clock /></el-icon>考勤签到</el-menu-item>
+          <el-menu-item index="/retake-signup"><el-icon><RefreshLeft /></el-icon>补考报名</el-menu-item>
+          <el-menu-item index="/my-message"><el-icon><ChatDotRound /></el-icon>消息中心<el-badge v-if="unreadMsg" :value="unreadMsg" style="margin-left:auto;margin-right:8px"/></el-menu-item>
+          <el-menu-item index="/my-evaluation"><el-icon><Star /></el-icon>课程评教</el-menu-item>
+          <el-menu-item index="/my-leave"><el-icon><DocumentChecked /></el-icon>请假申请</el-menu-item>
           <el-menu-item index="/plan"><el-icon><Notebook /></el-icon>个人培养方案</el-menu-item>
           <el-menu-item index="/my-fee"><el-icon><Wallet /></el-icon>一卡通·缴费</el-menu-item>
           <el-menu-item index="/my-dorm"><el-icon><OfficeBuilding /></el-icon>宿舍服务</el-menu-item>
@@ -70,6 +75,7 @@ import request from '@/utils/request'
 const auth=useAuthStore(); const router=useRouter()
 function onCmd(c:string){ if(c==='profile'){ router.push('/profile'); return } if(c==='logout'){ auth.logout(); router.push('/login') } }
 const noticeCount=ref(0)
+const unreadMsg=ref(0)
 const semesterLabel=ref('2024-2025学年 · 春季学期')
 function formatSemester(s:string){
   // 2025-2026-1 -> 2025-2026学年 · 秋季学期, 2025-2026-2 -> 春季
@@ -97,6 +103,14 @@ onMounted(async()=>{
   try{
     const r:any=await request.post('/notice/queryByPage', {pageNo:1,pageSize:1,data:{}})
     noticeCount.value=r?.data?.total ?? 0
+  }catch{}
+  // 未读站内消息数（顶栏铃铛角标）
+  try{
+    const sid2=auth.studentId || localStorage.getItem('studentId')
+    if(sid2){
+      const r:any=await request.post('/message/queryMine', {studentId:sid2})
+      unreadMsg.value=r?.data?.unread ?? 0
+    }
   }catch{}
 })
 </script>

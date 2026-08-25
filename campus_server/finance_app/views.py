@@ -296,3 +296,113 @@ class RetakeEnrollView(BaseView):
         FeeOrder.objects.create(order_id=order_id, student_id=student_id, order_amount=price, order_status='0', order_type='RETAKE', semester=semester, ch_id=enroll_id, detail=f"重修 {course_id}")
         FeeOrderItem.objects.create(item_id=gen_id('ITEM'), order_id=order_id, ref_id=enroll_id, item_name=crs.course_name if 'crs' in locals() else course_id, item_price=price, item_num=1, item_amount=price)
         return success({"enrollId": enroll_id, "orderId": order_id, "retakeFee": price})
+
+
+# ================= 一卡通账户 =================
+from .models import FinCardAccount, FinCardTransaction
+from django.utils import timezone as _tz
+
+def _ensure_card(student_id):
+    acc = FinCardAccount.objects.filter(student_id=student_id).first()
+    if not acc:
+        acc = FinCardAccount.objects.create(student_id=student_id, balance=0)
+    return acc
+
+class CardAccountView(BaseView):
+    def get(self, request):
+        student_id = request.GET.get('studentId')
+        if not student_id:
+            return error("studentId 必填", code=400)
+        acc = _ensure_card(student_id)
+        return success({"studentId": student_id, "balance": float(acc.balance)})
+
+class CardRechargeView(BaseView):
+    def post(self, request):
+        import decimal
+        body = self.parse_body(request)
+        student_id = body.get('studentId'); amount = body.get('amount')
+        try:
+            amount = decimal.Decimal(str(amount))
+        except:
+            return error("amount 非法", code=400)
+        if amount <= 0 or amount > 10000:
+            return error("充值金额须在 0.01-10000 之间", code=400)
+        acc = _ensure_card(student_id)
+        acc.balance = decimal.Decimal(acc.balance) + amount
+        acc.update_time = _tz.now(); acc.save(update_fields=['balance','update_time'])
+        tx = FinCardTransaction.objects.create(tx_id=gen_id('TX'), student_id=student_id, tx_type='1',
+            amount=amount, balance_after=acc.balance, scene='充值')
+        return success({"txId": tx.tx_id, "balance": float(acc.balance)})
+
+class CardConsumeView(BaseView):
+    def post(self, request):
+        import decimal
+        body = self.parse_body(request)
+        student_id = body.get('studentId'); amount = body.get('amount'); scene = body.get('scene') or '食堂'
+        try:
+            amount = decimal.Decimal(str(amount))
+        except:
+            return error("amount 非法", code=400)
+        if amount <= 0:
+            return error("消费金额须大于0", code=400)
+        acc = _ensure_card(student_id)
+        if decimal.Decimal(acc.balance) < amount:
+            return error("余额不足，请先充值", code=400)
+        acc.balance = decimal.Decimal(acc.balance) - amount
+        acc.update_time = _tz.now(); acc.save(update_fields=['balance','update_time'])
+        tx = FinCardTransaction.objects.create(tx_id=gen_id('TX'), student_id=student_id, tx_type='2',
+            amount=amount, balance_after=acc.balance, scene=scene, ref_id=body.get('refId'))
+        return success({"txId": tx.tx_id, "balance": float(acc.balance)})
+
+class CardTxQueryByPageView(BaseView):
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        qs = FinCardTransaction.objects.all().order_by('-tx_id')
+        if data.get('studentId'):
+            qs = qs.filter(student_id=data['studentId'])
+        if data.get('txType'):
+            qs = qs.filter(tx_type=data['txType'])
+        total = qs.count()
+        lst = list(qs[(page_no-1)*page_size: page_no*page_size].values())
+        return page_response(lst, total, page_no, page_size)
+
+class CardAccountsAdminView(BaseView):
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        qs = FinCardAccount.objects.all().order_by('-update_time')
+        if data.get('studentId'):
+            qs = qs.filter(student_id__icontains=data['studentId'])
+        total = qs.count()
+        lst = list(qs[(page_no-1)*page_size: page_no*page_size].values())
+        return page_response(lst, total, page_no, page_size)
+
+
+class FeeOrderExportView(BaseView):
+    """缴费清单导出：GET /feeOrder/export?orderStatus=&orderType="""
+    def get(self, request):
+        qs = FeeOrder.objects.all().order_by('-create_time')
+        st = request.GET.get('orderStatus'); ot = request.GET.get('orderType'); sid = request.GET.get('studentId')
+        if st: qs = qs.filter(order_status=st)
+        if ot: qs = qs.filter(order_type=ot)
+        if sid: qs = qs.filter(student_id=sid)
+        rows = []
+        for o in qs[:5000]:
+            rows.append({'订单号': o.order_id, '学号': o.student_id, '金额': float(o.order_amount or 0),
+                '状态': {'0':'未支付','3':'已支付','2':'已关闭'}.get(o.order_status, o.order_status),
+                '类型': {'TUITION':'学费','RETAKE':'重修/补考','NORMAL':'普通'}.get(o.order_type, o.order_type),
+                '学期': o.semester, '说明': o.detail, '创建时间': str(o.create_time)[:19]})
+        return _xlsx_response(rows, ['订单号','学号','金额','状态','类型','学期','说明','创建时间'], '缴费清单')
+
+
+def _xlsx_response(rows, headers, filename):
+    from openpyxl import Workbook
+    from io import BytesIO
+    from django.http import HttpResponse
+    from urllib.parse import quote
+    wb = Workbook(); ws = wb.active; ws.title = 'sheet1'
+    ws.append(headers)
+    for r in rows: ws.append([r.get(h) if isinstance(r, dict) else r for h in headers])
+    buf = BytesIO(); wb.save(buf)
+    resp = HttpResponse(buf.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f"attachment; filename*=UTF-8''{quote(filename)}.xlsx"
+    return resp

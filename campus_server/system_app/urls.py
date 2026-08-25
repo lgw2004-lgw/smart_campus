@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import (
+from .views import (MessageSendView, MessageQueryByPageView, MessageDeleteView, MessageMineView, MessageReadView, StatsDashboardView,
     UserQueryByPageView, UserInsertOrUpdateView, UserSaveView, UserDeleteView,
     RoleQueryByPageView, RoleSaveView, RoleDeleteView, RoleMenuAddView, RoleMenuQueryView, MenuTreeView, MenuSaveView, MenuDeleteView,
     DeptQueryByPageView, DeptTreeView, DeptSaveView, DeptDeleteView,
@@ -50,4 +50,12 @@ urlpatterns = [
 
     path('loginInfo/queryByPage', LoginInfoQueryView.as_view()),
     path('operLog/queryByPage', OperLogQueryView.as_view()),
+
+    path('message/send', MessageSendView.as_view()),
+    path('message/queryByPage', MessageQueryByPageView.as_view()),
+    path('message/delete/<str:message_id>', MessageDeleteView.as_view()),
+    path('message/delete', MessageDeleteView.as_view()),
+    path('message/queryMine', MessageMineView.as_view()),
+    path('message/read', MessageReadView.as_view()),
+    path('stats/dashboard', StatsDashboardView.as_view()),
 ]

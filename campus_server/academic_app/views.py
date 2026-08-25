@@ -2,7 +2,7 @@ from utils.base_view import BaseView
 from utils.response import success, error, page_response
 from utils.pagination import get_page_params
 from utils.gen_id import gen_id
-from .models import StuStudent, StuStudentFile, StuClass, AcaCourse, AcaScheduling, AcaEnrollment, AcaExam, AcaScore, AcaAttendance, AcaClassroom, AcaPlan
+from .models import StuStudent, StuStudentFile, StuClass, AcaCourse, AcaScheduling, AcaEnrollment, AcaExam, AcaScore, AcaAttendance, AcaClassroom, AcaPlan, AcaAttendanceSession, AcaExamSignup, AcaWarning, AcaEvaluation, AcaLeaveApply, AcaLeaveApproval
 import json
 
 def _get_jwc_college(request):
@@ -1058,6 +1058,8 @@ class AttendanceQueryView(BaseView):
         qs = AcaAttendance.objects.all()
         if data.get('studentId'): qs = qs.filter(student_id=data['studentId'])
         if data.get('courseId'): qs = qs.filter(course_id=data['courseId'])
+        if data.get('sessionId'): qs = qs.filter(session_id=data['sessionId'])
+        if data.get('scheduleId'): qs = qs.filter(schedule_id=data['scheduleId'])
         total = qs.count()
         lst = list(qs.order_by('-create_time')[(page_no-1)*page_size: page_no*page_size].values())
         return page_response(lst, total, page_no, page_size)
@@ -1303,3 +1305,493 @@ class SchedulingStudentTimetableView(BaseView):
                 'startWeek': s.start_week, 'endWeek': s.end_week, 'semester': s.semester,
             })
         return success(out)
+
+
+# ================= 考勤签到 =================
+def _gen_code(n=6):
+    import random, string
+    return ''.join(random.choices(string.digits, k=n))
+
+class AttendanceSessionCreateView(BaseView):
+    """教师发起签到场次：POST /attendance/session/create {scheduleId, minutes}"""
+    def post(self, request):
+        from datetime import datetime, timedelta
+        body = self.parse_body(request)
+        schedule_id = body.get('scheduleId')
+        if not schedule_id:
+            return error("scheduleId 必填", code=400)
+        sch = AcaScheduling.objects.filter(id=schedule_id).first()
+        if not sch:
+            return error("排课不存在", code=404)
+        minutes = int(body.get('minutes') or 5)
+        now = datetime.now()
+        code = _gen_code()
+        s = AcaAttendanceSession.objects.create(schedule_id=schedule_id, course_id=sch.course_id,
+            teacher_id=body.get('teacherId') or sch.teacher_id, session_code=code,
+            start_time=now, end_time=now+timedelta(minutes=minutes), status='0')
+        # 自动生成缺勤占位（未签到者）
+        enrolled = AcaEnrollment.objects.filter(schedule_id=schedule_id, status__in=['0','1']).values_list('student_id', flat=True)
+        for stu in enrolled:
+            AcaAttendance.objects.get_or_create(student_id=stu, schedule_id=schedule_id, session_id=s.id,
+                defaults={'course_id': sch.course_id, 'attend_status': '0'})
+        return success({"sessionId": s.id, "code": code, "endTime": s.end_time.strftime('%Y-%m-%d %H:%M:%S')})
+
+class AttendanceSessionCloseView(BaseView):
+    def post(self, request, session_id=None):
+        sid = session_id or self.parse_body(request).get('sessionId')
+        AcaAttendanceSession.objects.filter(id=sid).update(status='1')
+        return success({"sessionId": int(sid)})
+
+class AttendanceSessionQueryView(BaseView):
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        qs = AcaAttendanceSession.objects.all().order_by('-id')
+        if data.get('teacherId'):
+            qs = qs.filter(teacher_id=data['teacherId'])
+        if data.get('courseId'):
+            qs = qs.filter(course_id=data['courseId'])
+        total = qs.count()
+        lst = list(qs[(page_no-1)*page_size: page_no*page_size].values())
+        # 附带统计
+        ids = [r['id'] for r in lst]
+        from django.db.models import Count, Q
+        stats = {a['session_id']: a for a in AcaAttendance.objects.filter(session_id__in=ids).values('session_id').annotate(
+            total=Count('id'), present=Count('id', filter=Q(attend_status='1')))}
+        cinfo = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
+        for r in lst:
+            st = stats.get(r['id'], {})
+            r['present'] = st.get('present', 0); r['total'] = st.get('total', 0)
+            r['courseName'] = cinfo.get(r['course_id'], r['course_id'])
+        return page_response(lst, total, page_no, page_size)
+
+class AttendanceSignInView(BaseView):
+    """学生扫码/输码签到：POST /attendance/signIn {studentId, code}"""
+    def post(self, request):
+        body = self.parse_body(request)
+        student_id = body.get('studentId'); code = str(body.get('code') or '')
+        if not student_id or not code:
+            return error("studentId与code必填", code=400)
+        from datetime import datetime
+        sess = AcaAttendanceSession.objects.filter(session_code=code).order_by('-id').first()
+        if not sess:
+            return error("签到码无效", code=404)
+        if sess.status != '0':
+            return error("该签到已结束", code=400)
+        now = datetime.now()
+        if sess.end_time and now > sess.end_time:
+            return error("已超过签到截止时间", code=400)
+        # 需选修该课程
+        if not AcaEnrollment.objects.filter(student_id=student_id, course_id=sess.course_id, status__in=['0','1']).exists():
+            return error("您未选修该课程，无法签到", code=403)
+        rec = AcaAttendance.objects.filter(student_id=student_id, session_id=sess.id).first()
+        if rec and rec.attend_status == '1':
+            return error("请勿重复签到", code=400)
+        AcaAttendance.objects.update_or_create(student_id=student_id, session_id=sess.id,
+            defaults={'course_id': sess.course_id, 'schedule_id': sess.schedule_id, 'attend_status': '1'})
+        return success({"sessionId": sess.id, "courseId": sess.course_id})
+
+class AttendanceMyStatsView(BaseView):
+    """学生考勤统计：GET /attendance/myStats?studentId="""
+    def get(self, request):
+        student_id = request.GET.get('studentId')
+        if not student_id:
+            return error("studentId 必填", code=400)
+        rows = list(AcaAttendance.objects.filter(student_id=student_id).values())
+        cinfo = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
+        for r in rows: r['courseName'] = cinfo.get(r['course_id'], r['course_id'])
+        return success(rows)
+
+# ================= 补考报名 =================
+class ExamSignupAddView(BaseView):
+    """补考报名：校验挂科+发布补考考试，自动生成重修费订单"""
+    def post(self, request):
+        import time as _t
+        body = self.parse_body(request)
+        student_id = body.get('studentId'); exam_id = body.get('examId')
+        if not student_id or not exam_id:
+            return error("studentId与examId必填", code=400)
+        exam = AcaExam.objects.filter(exam_id=exam_id, status='1').first()
+        if not exam:
+            return error("考试不存在或未发布", code=404)
+        if exam.exam_type not in ('2','3'):
+            return error("该考试非补考/重修场次，无需报名", code=400)
+        course_id = exam.course_id
+        fail = AcaScore.objects.filter(student_id=student_id, course_id=course_id).order_by('-create_time').first()
+        if not fail or float(fail.score or 0) >= 60:
+            return error("仅挂科课程可报名补考", code=400)
+        dup = AcaExamSignup.objects.filter(student_id=student_id, exam_id=exam_id, status__in=['0','1']).exists()
+        if dup:
+            return error("已报名该场补考，请勿重复报名", code=400)
+        signup_id = gen_id('SIGN')
+        order_id = None; fee = 0
+        try:
+            crs = AcaCourse.objects.get(course_id=course_id)
+            fee = float(crs.credit or 3) * 100
+            from finance_app.models import FeeOrder, FeeOrderItem
+            order_id = gen_id('ORD')
+            FeeOrder.objects.create(order_id=order_id, student_id=student_id, order_amount=fee, order_status='0',
+                order_type='RETAKE', semester=exam.semester or '2024-2025-1', ch_id=signup_id, detail=f"补考报名-{crs.course_name}")
+            FeeOrderItem.objects.create(item_id=gen_id('ITEM'), order_id=order_id, ref_id=signup_id,
+                item_name=f"补考-{crs.course_name}", item_price=fee, item_num=1, item_amount=fee)
+        except Exception:
+            order_id = None
+        AcaExamSignup.objects.create(signup_id=signup_id, student_id=student_id, exam_id=exam_id,
+            course_id=course_id, fee_order_id=order_id, status='0')
+        return success({"signupId": signup_id, "orderId": order_id, "fee": fee})
+
+class ExamSignupPayConfirmView(BaseView):
+    """模拟支付成功回调：POST /examSignup/payConfirm/{signupId}"""
+    def post(self, request, signup_id=None):
+        su = AcaExamSignup.objects.filter(signup_id=signup_id).first()
+        if not su:
+            return error("报名记录不存在", code=404)
+        if su.status == '1':
+            return success({"signupId": signup_id, "status": '1'})
+        if su.fee_order_id:
+            from finance_app.models import FeeOrder
+            FeeOrder.objects.filter(order_id=su.fee_order_id).update(order_status='3')
+        AcaExamSignup.objects.filter(signup_id=signup_id).update(status='1')
+        return success({"signupId": signup_id, "status": '1'})
+
+class ExamSignupCancelView(BaseView):
+    def post(self, request, signup_id=None):
+        su = AcaExamSignup.objects.filter(signup_id=signup_id).first()
+        if not su:
+            return error("报名记录不存在", code=404)
+        if su.status == '1':
+            return error("已缴费报名不可取消", code=400)
+        AcaExamSignup.objects.filter(signup_id=signup_id).update(status='2')
+        if su.fee_order_id:
+            from finance_app.models import FeeOrder
+            FeeOrder.objects.filter(order_id=su.fee_order_id, order_status='0').update(order_status='2')
+        return success({"signupId": signup_id})
+
+class ExamSignupQueryByPageView(BaseView):
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        qs = AcaExamSignup.objects.all().order_by('-create_time')
+        college = _get_jwc_college(request)
+        if college:
+            allowed = _allowed_dept_ids(college)
+            if allowed is not None:
+                ac = list(AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True))
+                qs = qs.filter(course_id__in=ac)
+        if data.get('studentId'):
+            qs = qs.filter(student_id=data['studentId'])
+        if data.get('status'):
+            qs = qs.filter(status=data['status'])
+        if data.get('courseId'):
+            qs = qs.filter(course_id=data['courseId'])
+        total = qs.count()
+        lst = list(qs[(page_no-1)*page_size: page_no*page_size].values())
+        cinfo = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
+        einfo = {e.exam_id: e.exam_name for e in AcaExam.objects.all()}
+        for r in lst:
+            r['courseName'] = cinfo.get(r['course_id'], r['course_id'])
+            r['examName'] = einfo.get(r['exam_id'], r['exam_id'])
+        return page_response(lst, total, page_no, page_size)
+
+# ================= 学分/挂科预警 =================
+class WarningComputeView(BaseView):
+    """全量重算预警：FAIL按不及格门数分级；CREDIT对照培养方案应修进度"""
+    def post(self, request):
+        from django.db.models import Avg
+        from finance_app.models import FeeTuitionConfig
+        cfg = FeeTuitionConfig.objects.order_by('-create_time').first()
+        cur_sem = (cfg.semester if cfg else '2024-2025-1').split('-')[-1]
+        cur_year = int((cfg.semester if cfg else '2024-2025-1').split('-')[0])
+        # 课程学分映射 + 培养方案学分
+        credits = {c.course_id: float(c.credit or 3) for c in AcaCourse.objects.all()}
+        cnames = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
+        plan_by_major = {}
+        for p in AcaPlan.objects.all():
+            plan_by_major.setdefault(p.major_id, 0)
+            plan_by_major[p.major_id] += float(p.credit or 0)
+        created = 0
+        AcaWarning.objects.all().delete()
+        students = StuStudent.objects.filter(is_final='0')
+        scores = {}
+        for s in AcaScore.objects.all():
+            scores.setdefault(s.student_id, []).append(s)
+        for stu in students:
+            ss = scores.get(stu.student_id, [])
+            fails = [x for x in ss if x.exam_type == '0' and float(x.score or 0) < 60]
+            n = len(fails)
+            if n:
+                level = 3 if n >= 5 else 2 if n >= 3 else 1
+                names = ','.join([cnames.get(x.course_id, x.course_id) for x in fails][:5])
+                AcaWarning.objects.create(student_id=stu.student_id, warning_type='FAIL', level=level,
+                    detail=f"{n} 门课程不及格：{names}", semester=cfg.semester if cfg else '')
+                created += 1
+            # 学分预警：按入学年限估算应修
+            major_id = None
+            if stu.class_id:
+                cls = StuClass.objects.filter(class_id=stu.class_id).first()
+                if cls: major_id = cls.dept_id
+            total_plan = plan_by_major.get(major_id)
+            if total_plan and stu.enroll_year:
+                years = max(cur_year - stu.enroll_year, 0) + (1 if cur_sem == '2' else 0)
+                expected = round(total_plan * min(years / 4.0, 1.0), 1)
+                earned = sum(credits.get(x.course_id, 0) for x in ss if x.exam_type == '0' and float(x.score or 0) >= 60)
+                if earned < expected * 0.8 and years > 0:
+                    lvl = 3 if earned < expected * 0.5 else 2
+                    AcaWarning.objects.create(student_id=stu.student_id, warning_type='CREDIT', level=lvl,
+                        detail=f"应修约 {expected} 学分，实修 {earned:.1f} 学分", semester=cfg.semester if cfg else '')
+                    created += 1
+        cnt_fail = AcaWarning.objects.filter(warning_type='FAIL').count()
+        cnt_credit = AcaWarning.objects.filter(warning_type='CREDIT').count()
+        return success({"created": created, "fail": cnt_fail, "credit": cnt_credit})
+
+class WarningQueryByPageView(BaseView):
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        qs = AcaWarning.objects.all().order_by('-level', '-id')
+        college = _get_jwc_college(request)
+        if college:
+            allowed_majors = _allowed_dept_ids(college)
+            if allowed_majors is not None:
+                class_ids = list(StuClass.objects.filter(dept_id__in=allowed_majors).values_list('class_id', flat=True))
+                sids = list(StuStudent.objects.filter(class_id__in=class_ids).values_list('student_id', flat=True))
+                qs = qs.filter(student_id__in=sids)
+        if data.get('studentId'):
+            qs = qs.filter(student_id=data['studentId'])
+        if data.get('warningType'):
+            qs = qs.filter(warning_type=data['warningType'])
+        if data.get('handled'):
+            qs = qs.filter(handled=data['handled'])
+        total = qs.count()
+        lst = list(qs[(page_no-1)*page_size: page_no*page_size].values())
+        sinfo = {s.student_id: s.name for s in StuStudent.objects.filter(student_id__in=[r['student_id'] for r in lst])}
+        for r in lst: r['studentName'] = sinfo.get(r['student_id'], '')
+        return page_response(lst, total, page_no, page_size)
+
+class WarningHandleView(BaseView):
+    def post(self, request, wid=None):
+        wid = wid or self.parse_body(request).get('id')
+        AcaWarning.objects.filter(id=wid).update(handled='1')
+        return success({"id": int(wid)})
+
+class WarningMyView(BaseView):
+    def get(self, request):
+        student_id = request.GET.get('studentId')
+        if not student_id:
+            return error("studentId 必填", code=400)
+        rows = list(AcaWarning.objects.filter(student_id=student_id).order_by('-level').values())
+        return success(rows)
+
+# ================= 学生评教 =================
+class EvaluationSaveView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        student_id = body.get('studentId'); course_id = body.get('courseId')
+        rating = int(body.get('rating') or 5)
+        if rating < 1 or rating > 5:
+            return error("rating 取值 1-5", code=400)
+        if not AcaEnrollment.objects.filter(student_id=student_id, course_id=course_id, status__in=['0','1']).exists():
+            return error("仅已选课程可评教", code=403)
+        semester = body.get('semester') or ''
+        sch = AcaScheduling.objects.filter(course_id=course_id).order_by('-id').first()
+        teacher_id = sch.teacher_id if sch else None
+        if not semester:
+            semester = sch.semester if sch else '2024-2025-1'
+        ev = AcaEvaluation.objects.filter(student_id=student_id, course_id=course_id, semester=semester).first()
+        if ev:
+            ev.rating = rating; ev.items = body.get('items'); ev.comment_text = body.get('comment'); 
+            ev.save(update_fields=['rating','items','comment_text','update_time'])
+        else:
+            AcaEvaluation.objects.create(eval_id=gen_id('EVAL'), student_id=student_id, course_id=course_id,
+                teacher_id=teacher_id, semester=semester, rating=rating, items=body.get('items'), comment_text=body.get('comment'))
+        return success({"ok": True})
+
+class EvaluationPendingView(BaseView):
+    """待评教列表：GET /evaluation/pending?studentId= → 已缴费但未评的课程"""
+    def get(self, request):
+        student_id = request.GET.get('studentId')
+        if not student_id:
+            return error("studentId 必填", code=400)
+        ens = AcaEnrollment.objects.filter(student_id=student_id, status='1')
+        done = set(AcaEvaluation.objects.filter(student_id=student_id).values_list('course_id', flat=True))
+        cinfo = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
+        out = []
+        for e in ens:
+            if e.course_id in done: continue
+            out.append({'courseId': e.course_id, 'courseName': cinfo.get(e.course_id, e.course_id), 'enrollId': e.enroll_id})
+        return success(out)
+
+class EvaluationMyView(BaseView):
+    def get(self, request):
+        student_id = request.GET.get('studentId')
+        if not student_id:
+            return error("studentId 必填", code=400)
+        rows = list(AcaEvaluation.objects.filter(student_id=student_id).order_by('-create_time').values())
+        return success(rows)
+
+class EvaluationStatsView(BaseView):
+    """评教统计：POST /evaluation/queryByPage 按课程聚合"""
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        from django.db.models import Avg, Count
+        qs = AcaEvaluation.objects.values('course_id').annotate(avg_rating=Avg('rating'), cnt=Count('eval_id')).order_by('-cnt')
+        college = _get_jwc_college(request)
+        if college:
+            allowed = _allowed_dept_ids(college)
+            if allowed is not None:
+                ac = list(AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True))
+                qs = [q for q in qs if q['course_id'] in set(ac)]
+        total = len(qs)
+        rows = list(qs[(page_no-1)*page_size: page_no*page_size])
+        cinfo = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
+        for r in rows:
+            r['courseName'] = cinfo.get(r['course_id'], r['course_id'])
+            r['avgRating'] = round(float(r.pop('avg_rating') or 0), 2); r.pop('avg_rating', None)
+        return page_response(rows, total, page_no, page_size)
+
+class EvaluationDetailView(BaseView):
+    def get(self, request):
+        course_id = request.GET.get('courseId')
+        if not course_id:
+            return error("courseId 必填", code=400)
+        rows = list(AcaEvaluation.objects.filter(course_id=course_id).order_by('-create_time').values('eval_id','student_id','rating','comment_text','create_time'))
+        sids = {s.student_id: s.name for s in StuStudent.objects.filter(student_id__in=[r['student_id'] for r in rows])}
+        for r in rows:
+            r['studentName'] = sids.get(r['student_id'], '匿名')
+            del r['student_id']
+        return success(rows)
+
+# ================= 请假审批流 =================
+class LeaveApplyView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        student_id = body.get('studentId'); leave_type = body.get('leaveType') or '事假'
+        start_date = body.get('startDate'); end_date = body.get('endDate'); reason = body.get('reason')
+        if not student_id or not start_date or not end_date or not reason:
+            return error("studentId/startDate/endDate/reason 必填", code=400)
+        stu = StuStudent.objects.filter(student_id=student_id).first()
+        head = None; cls_id = None
+        if stu and stu.class_id:
+            cls = StuClass.objects.filter(class_id=stu.class_id).first()
+            if cls: head = cls.head_teacher_id; cls_id = cls.class_id
+        lid = gen_id('LEAV')
+        AcaLeaveApply.objects.create(leave_id=lid, student_id=student_id, class_id=cls_id,
+            head_teacher_id=head, leave_type=leave_type, start_date=start_date, end_date=end_date, reason=reason, status='0')
+        return success({"leaveId": lid, "headTeacherId": head})
+
+class LeaveCancelView(BaseView):
+    def post(self, request, leave_id=None):
+        lid = leave_id or self.parse_body(request).get('leaveId')
+        lv = AcaLeaveApply.objects.filter(leave_id=lid).first()
+        if not lv:
+            return error("请假单不存在", code=404)
+        if lv.status != '0':
+            return error("仅待审批状态可撤回", code=400)
+        AcaLeaveApply.objects.filter(leave_id=lid).update(status='3')
+        return success({"leaveId": lid})
+
+class LeaveApproveView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        lid = body.get('leaveId'); action = body.get('action'); opinion = body.get('opinion') or ''
+        approver_id = body.get('approverId')
+        lv = AcaLeaveApply.objects.filter(leave_id=lid).first()
+        if not lv:
+            return error("请假单不存在", code=404)
+        if lv.status != '0':
+            return error("该申请已处理", code=400)
+        ctx = _current_user_ctx(request)
+        is_admin = ctx['is_admin']
+        is_head = str(approver_id or ctx.get('user_id')) == str(lv.head_teacher_id)
+        if not (is_admin or is_head):
+            return error("无权限：仅该生辅导员或管理员可审批", code=403)
+        if action not in ('approve','reject'):
+            return error("action 必须为 approve/reject", code=400)
+        new_status = '1' if action == 'approve' else '2'
+        AcaLeaveApply.objects.filter(leave_id=lid).update(status=new_status)
+        AcaLeaveApproval.objects.create(leave_id=lid, approver_id=approver_id or ctx.get('user_id'),
+            action='1' if action == 'approve' else '2', opinion=opinion)
+        return success({"leaveId": lid, "status": new_status})
+
+class LeaveQueryByPageView(BaseView):
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        qs = AcaLeaveApply.objects.all().order_by('-create_time')
+        if data.get('studentId'):
+            qs = qs.filter(student_id=data['studentId'])
+        if data.get('headTeacherId'):
+            qs = qs.filter(head_teacher_id=data['headTeacherId'])
+        if data.get('status'):
+            qs = qs.filter(status=data['status'])
+        total = qs.count()
+        lst = list(qs[(page_no-1)*page_size: page_no*page_size].values())
+        sinfo = {s.student_id: (s.name, s.class_id) for s in StuStudent.objects.filter(student_id__in=[r['student_id'] for r in lst])}
+        tids = set()
+        for r in lst:
+            si = sinfo.get(r['student_id']); 
+            r['studentName'] = si[0] if si else ''
+            if r['head_teacher_id']: tids.add(r['head_teacher_id'])
+        from system_app.models import SysUser
+        tinfo = {u.user_id: u.user_name for u in SysUser.objects.filter(user_id__in=tids)}
+        for r in lst: r['headTeacherName'] = tinfo.get(r['head_teacher_id'], '')
+        return page_response(lst, total, page_no, page_size)
+
+
+# ================= Excel 导出 =================
+def _xlsx_response(rows, headers, filename):
+    from openpyxl import Workbook
+    from io import BytesIO
+    from django.http import HttpResponse
+    wb = Workbook(); ws = wb.active; ws.title = 'sheet1'
+    ws.append(headers)
+    for r in rows: ws.append([r.get(h) if isinstance(r, dict) else r for h in headers])
+    buf = BytesIO(); wb.save(buf)
+    from urllib.parse import quote
+    resp = HttpResponse(buf.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f"attachment; filename*=UTF-8''{quote(filename)}.xlsx"
+    return resp
+
+class ScoreExportView(BaseView):
+    """成绩单导出：GET /score/export?courseId=&studentId="""
+    def get(self, request):
+        qs = AcaScore.objects.all().order_by('-create_time')
+        college = _get_jwc_college(request)
+        if college:
+            allowed = _allowed_dept_ids(college)
+            if allowed is not None:
+                ac = list(AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True))
+                qs = qs.filter(course_id__in=ac)
+        cid = request.GET.get('courseId'); sid = request.GET.get('studentId')
+        if cid: qs = qs.filter(course_id=cid)
+        if sid: qs = qs.filter(student_id=sid)
+        cinfo = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
+        sinfo = {s.student_id: s.name for s in StuStudent.objects.filter(student_id__in=set(qs.values_list('student_id', flat=True)[:5000]))}
+        rows = []
+        for s in qs[:5000]:
+            rows.append({'学号': s.student_id, '姓名': sinfo.get(s.student_id,''), '课程': cinfo.get(s.course_id,s.course_id),
+                '分数': float(s.score or 0), '绩点': float(s.gpa_point or 0), '学期': s.semester,
+                '类型': {'0':'正常','1':'补考','2':'重修'}.get(s.exam_type, s.exam_type),
+                '状态': {'0':'草稿','1':'待教务确认','2':'待终审','3':'已终审'}.get(s.status, s.status)})
+        return _xlsx_response(rows, ['学号','姓名','课程','分数','绩点','学期','类型','状态'], '成绩单')
+
+class EnrollmentRosterExportView(BaseView):
+    """选课名单导出：GET /enrollment/export?courseId="""
+    def get(self, request):
+        qs = AcaEnrollment.objects.all().order_by('-create_time')
+        college = _get_jwc_college(request)
+        if college:
+            allowed = _allowed_dept_ids(college)
+            if allowed is not None:
+                ac = list(AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True))
+                qs = qs.filter(course_id__in=ac)
+        cid = request.GET.get('courseId'); status = request.GET.get('status')
+        if cid: qs = qs.filter(course_id=cid)
+        if status: qs = qs.filter(status=status)
+        cinfo = {c.course_id: c.course_name for c in AcaCourse.objects.all()}
+        students = StuStudent.objects.filter(student_id__in=set(qs.values_list('student_id', flat=True)[:5000]))
+        cls_ids = set(students.values_list('class_id', flat=True))
+        clinfo = {c.class_id: c.class_name for c in StuClass.objects.filter(class_id__in=cls_ids)}
+        sinfo = {s.student_id: (s.name, clinfo.get(s.class_id,'')) for s in students}
+        rows = []
+        for e in qs[:5000]:
+            si = sinfo.get(e.student_id, ('',''))
+            rows.append({'学号': e.student_id, '姓名': si[0], '班级': si[1], '课程': cinfo.get(e.course_id,e.course_id),
+                '状态': {'0':'待缴费','1':'已缴费','2':'已退选'}.get(e.status, e.status), '时间': str(e.create_time)[:19]})
+        return _xlsx_response(rows, ['学号','姓名','班级','课程','状态','时间'], '选课名单')

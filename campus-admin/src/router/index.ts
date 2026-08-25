@@ -17,6 +17,13 @@ const router = createRouter({
         { path: 'academic/enrollment', component: () => import('@/views/academic/Enrollment.vue'), meta: { title: '选课管理' } },
         { path: 'academic/score', component: () => import('@/views/academic/Score.vue'), meta: { title: '成绩管理' } },
         { path: 'academic/exam', component: () => import('@/views/academic/Exam.vue'), meta: { title: '考试管理' } },
+        { path: 'academic/attendance', component: () => import('@/views/academic/Attendance.vue'), meta: { title: '考勤管理' } },
+        { path: 'academic/examsignup', component: () => import('@/views/academic/ExamSignup.vue'), meta: { title: '补考报名' } },
+        { path: 'academic/warning', component: () => import('@/views/academic/Warning.vue'), meta: { title: '学业预警' } },
+        { path: 'academic/evaluation', component: () => import('@/views/academic/Evaluation.vue'), meta: { title: '评教统计' } },
+        { path: 'student/leave', component: () => import('@/views/student/Leave.vue'), meta: { title: '请假审批' } },
+        { path: 'content/message', component: () => import('@/views/content/Message.vue'), meta: { title: '消息管理' } },
+        { path: 'finance/card', component: () => import('@/views/finance/Card.vue'), meta: { title: '一卡通账户' } },
         { path: 'resource/classroom', component: () => import('@/views/resource/Classroom.vue'), meta: { title: '教室管理' } },
         // student
         { path: 'student/list', component: () => import('@/views/student/List.vue'), meta: { title: '学生档案' } },

@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import FeeCalcView, FeePayMsgView, WeChatNativeCodeView, WeChatPayStatusView, FeeOrderUpdateView, FeeOrderQueryByPageView, FeeRefundView, TuitionSaveView, TuitionQueryView, TuitionGetView, TuitionPayView, RetakeFeeCalcView, RetakeEnrollView
+from .views import FeeCalcView, FeePayMsgView, WeChatNativeCodeView, WeChatPayStatusView, FeeOrderUpdateView, FeeOrderQueryByPageView, FeeRefundView, TuitionSaveView, TuitionQueryView, TuitionGetView, TuitionPayView, RetakeFeeCalcView, RetakeEnrollView, CardAccountView, CardRechargeView, CardConsumeView, CardTxQueryByPageView, CardAccountsAdminView, FeeOrderExportView
 
 urlpatterns = [
     path('fee/calc', FeeCalcView.as_view()),
@@ -15,4 +15,11 @@ urlpatterns = [
     path('fee/tuition/pay', TuitionPayView.as_view()),
     path('fee/retake/calc', RetakeFeeCalcView.as_view()),
     path('fee/retake/enroll', RetakeEnrollView.as_view()),
+
+    path('card/account', CardAccountView.as_view()),
+    path('card/recharge', CardRechargeView.as_view()),
+    path('card/consume', CardConsumeView.as_view()),
+    path('card/tx/queryByPage', CardTxQueryByPageView.as_view()),
+    path('card/accounts/queryByPage', CardAccountsAdminView.as_view()),
+    path('feeOrder/export', FeeOrderExportView.as_view()),
 ]

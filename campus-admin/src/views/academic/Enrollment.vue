@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-card>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h3>选课管理</h3>
@@ -7,6 +7,7 @@
         <el-select v-model="query.status" placeholder="状态" clearable style="width:140px;margin-right:8px"><el-option label="待缴费" value="0"/><el-option label="已选" value="1"/><el-option label="已退" value="2"/></el-select>
         <el-button type="primary" @click="search">查询</el-button>
         <el-button type="success" @click="dialogAdd=true">选课</el-button>
+        <el-button type="info" @click="onExport">导出名单</el-button>
       </div>
     </div>
     <el-table :data="list" v-loading="loading" border>
@@ -33,6 +34,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { usePage } from '@/composables/usePage'
+import { downloadFile } from '@/utils/download'
 import request from '@/utils/request'
 import { ElMessage } from 'element-plus'
 const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChange, handleSizeChange, search } = usePage('/enrollment/queryByPage', {studentId:'', status:''})
@@ -71,4 +73,5 @@ async function cancel(row:any){
   await request.post(`/enrollment/cancel/${row.enroll_id}`)
   ElMessage.success('已退选'); fetch()
 }
+async function onExport(){ await downloadFile('/enrollment/export', {courseId:query.courseId||undefined, status:query.status||undefined}, '选课名单.xlsx') }
 </script>

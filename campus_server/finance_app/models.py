@@ -51,3 +51,27 @@ class FeeRefund(models.Model):
     class Meta:
         db_table = 'fee_refund'
         managed = False
+
+
+class FinCardAccount(models.Model):
+    student_id = models.CharField(primary_key=True, max_length=20)
+    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    update_time = models.DateTimeField(auto_now=True, null=True)
+
+    class Meta:
+        db_table = 'fin_card_account'
+        managed = False
+
+class FinCardTransaction(models.Model):
+    tx_id = models.CharField(primary_key=True, max_length=20)
+    student_id = models.CharField(max_length=20)
+    tx_type = models.CharField(max_length=1, help_text='1充值 2消费 3退款')
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    balance_after = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    scene = models.CharField(max_length=30, null=True)
+    ref_id = models.CharField(max_length=20, null=True)
+    create_time = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'fin_card_transaction'
+        managed = False

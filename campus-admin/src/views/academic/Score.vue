@@ -11,6 +11,7 @@
         <el-button type="primary" @click="search">查询</el-button>
         <el-button type="success" @click="openAdd()">录入成绩</el-button>
         <el-button v-if="isAdmin||isJwc" type="warning" @click="showRank">统计</el-button>
+        <el-button v-if="isAdmin||isJwc" type="success" @click="onExport">导出成绩单</el-button>
       </div>
     </div>
     <el-upload v-if="isAdmin||isJwc" :action="uploadUrl" :headers="headers" :show-file-list="false" :on-success="onUploadSuccess" :on-error="onUploadError" accept=".xlsx,.xls" style="margin-bottom:10px">
@@ -61,6 +62,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
+import { downloadFile } from '@/utils/download'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 const auth = useAuthStore()
@@ -106,4 +108,10 @@ function onUploadSuccess(res:any){ if(res.code===200) { ElMessage.success(`导�
 function onUploadError(){ ElMessage.error('导入失败') }
 const rankDialog=ref(false); const rankData=ref<any>(null)
 async function showRank(){ const res:any = await request.post('/score/queryRank', {courseId:query.courseId||undefined}); rankData.value=res.data; rankDialog.value=true }
+async function onExport(){
+  const params:any = {}
+  if(query.courseId) params.courseId=query.courseId
+  if(query.studentId) params.studentId=query.studentId
+  await downloadFile('/score/export', params, '成绩单.xlsx')
+}
 </script>

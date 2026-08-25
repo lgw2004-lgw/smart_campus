@@ -157,3 +157,29 @@ class SysWhiteName(models.Model):
     class Meta:
         db_table = 'sys_white_name'
         managed = False
+
+
+class SysMessage(models.Model):
+    message_id = models.CharField(primary_key=True, max_length=20)
+    title = models.CharField(max_length=100)
+    content = models.CharField(max_length=500, null=True)
+    msg_type = models.CharField(max_length=20, default='SYS', help_text='SCORE/EXAM/FEE/DORM/SYS')
+    target_type = models.CharField(max_length=1, default='0', help_text='0全体学生 1指定学号')
+    target_id = models.CharField(max_length=20, null=True)
+    create_by = models.BigIntegerField(null=True)
+    create_time = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'sys_message'
+        managed = False
+
+class SysMessageRead(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    message_id = models.CharField(max_length=20)
+    student_id = models.CharField(max_length=20)
+    read_time = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'sys_message_read'
+        managed = False
+        unique_together = (('message_id','student_id'),)

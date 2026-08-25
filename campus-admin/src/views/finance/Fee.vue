@@ -59,7 +59,7 @@
 
     <h4>订单列表（区分 总学费/重修/普通）</h4>
     <el-form inline style="margin-bottom:8px">
-      <el-form-item><el-input v-model="query.studentId" placeholder="学号" clearable style="width:140px"/><el-select v-model="query.orderStatus" placeholder="状态" clearable style="width:120px;margin-left:6px"><el-option label="未付" value="0"/><el-option label="已付" value="3"/></el-select><el-button style="margin-left:6px" @click="search">查询</el-button></el-form-item>
+      <el-form-item><el-input v-model="query.studentId" placeholder="学号" clearable style="width:140px"/><el-select v-model="query.orderStatus" placeholder="状态" clearable style="width:120px;margin-left:6px"><el-option label="未付" value="0"/><el-option label="已付" value="3"/></el-select><el-button style="margin-left:6px" @click="search">查询</el-button><el-button style="margin-left:6px" type="success" @click="onExport">导出缴费清单</el-button></el-form-item>
     </el-form>
     <el-table :data="list" v-loading="loading" border>
       <el-table-column prop="order_id" label="订单ID" width="190"/>
@@ -79,8 +79,10 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
+import { downloadFile } from '@/utils/download'
 import { ElMessage } from 'element-plus'
 const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChange, handleSizeChange, search } = usePage('/feeOrder/queryByPage', {studentId:'', orderStatus:''})
+async function onExport(){ await downloadFile('/feeOrder/export', {orderStatus:query.orderStatus||undefined, studentId:query.studentId||undefined}, '缴费清单.xlsx') }
 fetch()
 const tuitionForm=reactive<any>({semester:'2025-2026-1', totalAmount:'8000', detail:'学费8000（含学分/住宿/教材）'})
 const tuitionList=ref<any[]>([])

@@ -43,6 +43,24 @@
       </div>
     </el-card>
 
+    <el-card shadow="never" style="border-radius:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0">一卡通（充值/消费）</h3><el-button size="small" @click="loadCard">刷新</el-button></div>
+      <div style="display:flex;gap:16px;align-items:center;background:#f6f8ff;border:1px solid #d6e4ff;border-radius:12px;padding:12px;flex-wrap:wrap">
+        <div><div style="font-size:12px;color:#8a94a6">卡内余额</div><div style="font-size:26px;font-weight:800;color:#1e5eff">¥{{ cardBalance }}</div></div>
+        <el-button type="success" @click="recharge(50)">充 50</el-button>
+        <el-button type="success" @click="recharge(100)">充 100</el-button>
+        <el-button type="warning" @click="consume('食堂')">食堂消费 ¥12</el-button>
+        <el-button type="warning" @click="consume('超市')">超市消费 ¥25.5</el-button>
+      </div>
+      <el-table :data="cardTx" size="small" border style="margin-top:10px" max-height="240">
+        <el-table-column label="类型" width="80"><template #default="{row}"><el-tag size="small" :type="row.tx_type==='1'?'success':'danger'">{{ row.tx_type==='1'?'充值':'消费' }}</el-tag></template></el-table-column>
+        <el-table-column label="金额" width="90"><template #default="{row}">¥{{ row.amount }}</template></el-table-column>
+        <el-table-column prop="balance_after" label="余额" width="90"/>
+        <el-table-column prop="scene" label="场景" width="90"/>
+        <el-table-column prop="create_time" label="时间"/>
+      </el-table>
+    </el-card>
+
     <el-dialog v-model="qrDialog" title="微信扫码支付（模拟）" width="420" center @close="cancelQrTimer">
       <div v-if="qr" style="text-align:center">
         <img :src="qr.qrCode" @click="onQrClick" :style="{width:'220px',height:'220px',border:'1px solid #eee',borderRadius:'12px',cursor: qrPaying?'wait':'pointer', opacity: qrPaying?0.7:1}" title="点击二维码 5秒后自动支付成功"/>
@@ -94,7 +112,26 @@ async function onQrClick(){
   }, 5000)
 }
 async function confirm(row:any){ await request.post(`/feeOrder/updateById/${row.order_id}`); ElMessage.success('支付成功'); loadOrders(); loadTuition() }
-onMounted(()=>{ loadTuition(); loadOrders() })
+// ---- 一卡通 ----
+const cardBalance=ref('0.00'); const cardTx=ref<any[]>([])
+async function loadCard(){
+  try{
+    const r:any=await request.get('/card/account',{params:{studentId:sid}}); cardBalance.value=Number(r.data.balance).toFixed(2)
+    const r2:any=await request.post('/card/tx/queryByPage',{pageNo:1,pageSize:10,data:{studentId:sid}}); cardTx.value=r2.data.list||[]
+  }catch{}
+}
+async function recharge(amount:number){
+  const r:any=await request.post('/card/recharge', {studentId:sid, amount})
+  ElMessage.success(`充值成功，余额 ¥${r.data.balance}`); loadCard()
+}
+async function consume(scene:string){
+  const amount = scene==='食堂'?12:25.5
+  try{
+    const r:any=await request.post('/card/consume', {studentId:sid, amount, scene})
+    ElMessage.success(`${scene}消费 ¥${amount}，余额 ¥${r.data.balance}`); loadCard()
+  }catch{}
+}
+onMounted(()=>{ loadTuition(); loadOrders(); loadCard() })
 </script>
 <style scoped>
 .order-list{margin-top:12px;display:flex;flex-direction:column;gap:10px}

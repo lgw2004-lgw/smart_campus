@@ -160,9 +160,97 @@ class AcaAttendance(models.Model):
     student_id = models.CharField(max_length=20)
     course_id = models.CharField(max_length=20, null=True)
     schedule_id = models.BigIntegerField(null=True)
+    session_id = models.BigIntegerField(null=True, help_text='签到场次')
     attend_status = models.CharField(max_length=1, default='1', help_text='1到课 0缺勤')
     create_time = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'aca_attendance'
+        managed = False
+
+class AcaAttendanceSession(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    schedule_id = models.BigIntegerField()
+    course_id = models.CharField(max_length=20, null=True)
+    teacher_id = models.BigIntegerField(null=True)
+    session_code = models.CharField(max_length=8)
+    start_time = models.DateTimeField(null=True)
+    end_time = models.DateTimeField(null=True)
+    status = models.CharField(max_length=1, default='0', help_text='0进行中 1已结束')
+    create_time = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'aca_attendance_session'
+        managed = False
+
+class AcaExamSignup(models.Model):
+    signup_id = models.CharField(primary_key=True, max_length=20)
+    student_id = models.CharField(max_length=20)
+    exam_id = models.CharField(max_length=20)
+    course_id = models.CharField(max_length=20, null=True)
+    fee_order_id = models.CharField(max_length=20, null=True)
+    status = models.CharField(max_length=1, default='0', help_text='0待缴费 1已报名 2已取消')
+    create_time = models.DateTimeField(null=True)
+
+    class Meta:
+        db_table = 'aca_exam_signup'
+        managed = False
+
+class AcaWarning(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    student_id = models.CharField(max_length=20)
+    warning_type = models.CharField(max_length=10, help_text='FAIL挂科 CREDIT学分')
+    level = models.IntegerField(default=1, help_text='1提示 2警告 3严重')
+    detail = models.CharField(max_length=255, null=True)
+    semester = models.CharField(max_length=20, null=True)
+    handled = models.CharField(max_length=1, default='0')
+    create_time = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'aca_warning'
+        managed = False
+
+class AcaEvaluation(models.Model):
+    eval_id = models.CharField(primary_key=True, max_length=20)
+    student_id = models.CharField(max_length=20)
+    course_id = models.CharField(max_length=20)
+    teacher_id = models.BigIntegerField(null=True)
+    semester = models.CharField(max_length=20, null=True)
+    rating = models.IntegerField(default=5, help_text='1-5星')
+    items = models.TextField(null=True, help_text='各维度评分JSON')
+    comment_text = models.CharField(max_length=500, null=True)
+    create_time = models.DateTimeField(auto_now_add=True)
+    update_time = models.DateTimeField(auto_now=True, null=True)
+
+    class Meta:
+        db_table = 'aca_evaluation'
+        managed = False
+        unique_together = (('student_id','course_id','semester'),)
+
+class AcaLeaveApply(models.Model):
+    leave_id = models.CharField(primary_key=True, max_length=20)
+    student_id = models.CharField(max_length=20)
+    class_id = models.BigIntegerField(null=True)
+    head_teacher_id = models.BigIntegerField(null=True)
+    leave_type = models.CharField(max_length=10, default='事假')
+    start_date = models.DateField(null=True)
+    end_date = models.DateField(null=True)
+    reason = models.CharField(max_length=500, null=True)
+    status = models.CharField(max_length=1, default='0', help_text='0待审批 1已批准 2已驳回 3已撤回')
+    create_time = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'aca_leave_apply'
+        managed = False
+
+class AcaLeaveApproval(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    leave_id = models.CharField(max_length=20)
+    approver_id = models.BigIntegerField(null=True)
+    action = models.CharField(max_length=1, help_text='1批准 2驳回')
+    opinion = models.CharField(max_length=300, null=True)
+    create_time = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'aca_leave_approval'
         managed = False

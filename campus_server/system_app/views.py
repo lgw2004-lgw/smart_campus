@@ -559,3 +559,136 @@ class OperLogQueryView(BaseView):
         total = qs.count()
         lst = list(qs.order_by('-oper_time')[(page_no-1)*page_size: page_no*page_size].values())
         return page_response(lst, total, page_no, page_size)
+
+
+# ================= 站内消息中心 =================
+from .models import SysMessage, SysMessageRead
+
+class MessageSendView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        title = body.get('title'); content = body.get('content')
+        if not title or not content:
+            return error("title与content必填", code=400)
+        target_type = str(body.get('targetType') or '0')
+        target_id = body.get('targetStudentId') or body.get('targetId')
+        if target_type == '1' and not target_id:
+            return error("指定学生时 targetStudentId 必填", code=400)
+        mid = gen_id('MSG')
+        info = getattr(request, 'user_info', None) or {}
+        create_by = info.get('userId') or info.get('user_id')
+        try: create_by = int(create_by)
+        except: create_by = None
+        SysMessage.objects.create(message_id=mid, title=title, content=content,
+            msg_type=body.get('msgType') or 'SYS', target_type=target_type, target_id=target_id, create_by=create_by)
+        return success({"messageId": mid})
+
+class MessageQueryByPageView(BaseView):
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        qs = SysMessage.objects.all().order_by('-create_time')
+        if data.get('msgType'):
+            qs = qs.filter(msg_type=data['msgType'])
+        if data.get('title'):
+            qs = qs.filter(title__icontains=data['title'])
+        total = qs.count()
+        lst = list(qs[(page_no-1)*page_size: page_no*page_size].values())
+        return page_response(lst, total, page_no, page_size)
+
+class MessageDeleteView(BaseView):
+    def post(self, request, message_id=None):
+        mid = message_id or self.parse_body(request).get('messageId')
+        SysMessage.objects.filter(message_id=mid).delete()
+        SysMessageRead.objects.filter(message_id=mid).delete()
+        return success({"messageId": mid})
+
+class MessageMineView(BaseView):
+    """我的消息：POST /message/queryMine {studentId} → 全体+定向，带已读标记与未读数"""
+    def post(self, request):
+        data = self.parse_body(request)
+        student_id = data.get('studentId')
+        if not student_id:
+            return error("studentId 必填", code=400)
+        msgs = list(SysMessage.objects.filter(target_type='0').values()) + \
+               list(SysMessage.objects.filter(target_type='1', target_id=student_id).values())
+        msgs.sort(key=lambda m: m['create_time'] or m['message_id'], reverse=True)
+        read_set = set(SysMessageRead.objects.filter(student_id=student_id).values_list('message_id', flat=True))
+        out = []
+        unread = 0
+        for m in msgs:
+            is_read = m['message_id'] in read_set
+            if not is_read: unread += 1
+            out.append({'messageId': m['message_id'], 'title': m['title'], 'content': m['content'],
+                'msgType': m['msg_type'], 'createTime': m['create_time'], 'read': is_read})
+        return success({"list": out, "total": len(out), "unread": unread})
+
+class MessageReadView(BaseView):
+    def post(self, request):
+        data = self.parse_body(request)
+        mid = data.get('messageId'); sid = data.get('studentId')
+        if not mid or not sid:
+            return error("messageId与studentId必填", code=400)
+        if not SysMessageRead.objects.filter(message_id=mid, student_id=sid).exists():
+            SysMessageRead.objects.create(message_id=mid, student_id=sid)
+        return success({"ok": True})
+
+
+# ================= 数据大屏聚合 =================
+class StatsDashboardView(BaseView):
+    def get(self, request):
+        out = {}
+        try:
+            from academic_app.models import StuStudent, AcaEnrollment, AcaScore, AcaWarning, AcaEvaluation, AcaExamSignup, StuClass
+            from finance_app.models import FeeOrder, FinCardAccount
+            from resource_app.models import ResRoom, ResBorrow
+            from django.db.models import Avg, Count
+            from django.utils import timezone
+            from datetime import timedelta
+            # 汇总卡片
+            total_orders = FeeOrder.objects.count()
+            paid = FeeOrder.objects.filter(order_status='3').count()
+            out['cards'] = {
+                'students': StuStudent.objects.filter(is_final='0').count(),
+                'enrollments': AcaEnrollment.objects.exclude(status='2').count(),
+                'unpaidOrders': FeeOrder.objects.exclude(order_status='3').count(),
+                'borrowing': ResBorrow.objects.filter(status='0').count(),
+                'feeRate': round(paid / total_orders * 100, 1) if total_orders else 0,
+                'warnings': AcaWarning.objects.filter(handled='0').count(),
+                'pendingLeave': None,
+                'examSignups': AcaExamSignup.objects.exclude(status='2').count(),
+                'avgRating': round(float(AcaEvaluation.objects.aggregate(a=Avg('rating'))['a'] or 0), 2),
+            }
+            try:
+                from academic_app.models import AcaLeaveApply
+                out['cards']['pendingLeave'] = AcaLeaveApply.objects.filter(status='0').count()
+            except: pass
+            # 选课热度 Top10
+            rows = (AcaEnrollment.objects.exclude(status='2').values('course_id')
+                    .annotate(cnt=Count('enroll_id')).order_by('-cnt')[:10])
+            cinfo = {c.course_id: c.course_name for c in __import__('academic_app.models', fromlist=['AcaCourse']).AcaCourse.objects.all()}
+            out['enrollTop'] = [{'name': cinfo.get(r['course_id'], r['course_id']), 'value': r['cnt']} for r in rows]
+            # 成绩分布
+            sc = AcaScore.objects.all()
+            out['scoreBuckets'] = {'90-100': sc.filter(score__gte=90).count(), '80-89': sc.filter(score__gte=80, score__lt=90).count(),
+                '70-79': sc.filter(score__gte=70, score__lt=80).count(), '60-69': sc.filter(score__gte=60, score__lt=70).count(),
+                '<60': sc.filter(score__lt=60).count()}
+            # 缴费率
+            out['feeDonut'] = [{'name':'已支付','value':paid},{'name':'未支付','value':total_orders-paid}]
+            # 宿舍入住率（按楼栋聚合前10）
+            rooms = ResRoom.objects.all()[:2000]
+            bstat = {}
+            for r in rooms:
+                st = bstat.setdefault(r.building_id, [0,0])
+                st[0] += r.capacity or 0; st[1] += r.occupied or 0
+            out['dormOccupancy'] = [{'building': f'{k}栋', 'rate': round(v[1]/v[0]*100,1) if v[0] else 0}
+                for k,v in sorted(bstat.items(), key=lambda x:-x[1][1]/max(x[1][0],1))[:8]]
+            # 借阅趋势近7天（res_borrow 用 borrow_time）
+            trend = []
+            for i in range(6,-1,-1):
+                d = (timezone.now()-timedelta(days=i)).date()
+                nxt = d + timedelta(days=1)
+                trend.append({'date': d.strftime('%m-%d'), 'cnt': ResBorrow.objects.filter(borrow_time__gte=d, borrow_time__lt=nxt).count()})
+            out['borrowTrend'] = trend
+        except Exception as e:
+            return error(str(e))
+        return success(out)

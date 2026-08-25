@@ -18,6 +18,14 @@
       </div>
     </div>
 
+    <!-- 学业预警 -->
+    <el-alert v-if="warnings.length" type="error" :closable="true" style="margin-top:14px;border-radius:12px">
+      <template #title>
+        <span>学业预警（{{ warnings.length }} 条）：</span>
+        <span v-for="(w,i) in warnings" :key="w.id">{{ i>0?'；':'' }}【{{ w.warning_type==='FAIL'?'挂科':'学分' }}·{{ ['','提示','警告','严重'][w.level] }}】{{ w.detail }}</span>
+      </template>
+    </el-alert>
+
     <!-- 快捷服务 -->
     <div class="section-title"><span>快捷服务</span><el-link type="primary" :underline="false">全部服务</el-link></div>
     <div class="grid">
@@ -61,6 +69,7 @@ const banners=ref<any[]>([]); const notices=ref<any[]>([])
 const pending=ref(0); const noticeTotal=ref(0); const borrowing=ref(0)
 const selectableCnt=ref(0); const unpaidFee=ref(0); const gpa=ref('—'); const dormDesc=ref('')
 const schedule=ref<{time:string;course:string;room:string;teacher:string;bg:string}[]>([])
+const warnings=ref<any[]>([])
 const hour=new Date().getHours()
 const greeting = hour<6?'夜深了':hour<9?'早上好':hour<12?'上午好':hour<14?'中午好':hour<18?'下午好':'晚上好'
 const weekCn=['日','一','二','三','四','五','六'][new Date().getDay()]
@@ -90,6 +99,7 @@ onMounted(async()=>{
   request.post('/feeOrder/queryByPage', {pageNo:1,pageSize:50,data:{studentId:sid}}).then((r:any)=>{ unpaidFee.value=(r.data.list||[]).filter((o:any)=>o.order_status!=='3').length }).catch(()=>{})
   request.post('/score/queryByPage', {pageNo:1,pageSize:100,data:{studentId:sid}}).then((r:any)=>{ const l=r.data.list||[]; if(l.length) gpa.value=(l.reduce((s:number,x:any)=>s+Number(x.gpa_point||0),0)/l.length).toFixed(2) }).catch(()=>{})
   request.get('/dorm/queryAssign',{params:{studentId:sid}}).then((r:any)=>{ const d=r.data||{}; dormDesc.value=d.building_name?`${d.building_name} ${d.room_no}`:'' }).catch(()=>{})
+  request.get('/warning/my',{params:{studentId:sid}}).then((r:any)=>warnings.value=r.data||[]).catch(()=>{})
   loadToday()
 })
 const services=computed(()=>[
