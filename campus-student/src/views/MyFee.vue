@@ -43,10 +43,11 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="qrDialog" title="微信扫码支付（模拟）" width="420" center>
+    <el-dialog v-model="qrDialog" title="微信扫码支付（模拟）" width="420" center @close="cancelQrTimer">
       <div v-if="qr" style="text-align:center">
-        <img :src="qr.qrCode" style="width:220px;height:220px;border:1px solid #eee;border-radius:12px"/>
-        <div style="margin-top:8px;word-break:break-all;font-size:12px;color:#666">{{ qr.codeUrl }}</div>
+        <img :src="qr.qrCode" @click="onQrClick" :style="{width:'220px',height:'220px',border:'1px solid #eee',borderRadius:'12px',cursor: qrPaying?'wait':'pointer', opacity: qrPaying?0.7:1}" title="点击二维码 5秒后自动支付成功"/>
+        <div style="margin-top:8px;font-size:12px;color:#1e5eff">点击二维码 5秒后自动支付成功{{ qrPaying ? `（${qrCountdown}s）` : '' }}</div>
+        <div style="margin-top:4px;word-break:break-all;font-size:12px;color:#666">{{ qr.codeUrl }}</div>
       </div>
     </el-dialog>
   </div>
@@ -79,8 +80,19 @@ async function loadOrders(){
   orders.value=res?.data?.list ?? []
   retakeOrders.value=orders.value.filter((o:any)=>o.order_type==='RETAKE')
 }
-const qr=ref<any>(null); const qrDialog=ref(false)
-async function showQR(row:any){ const res:any=await request.post(`/weChatPay/getNativeCodeUrl/${row.order_id}`); qr.value=res?.data ?? null; qrDialog.value=true }
+const qr=ref<any>(null); const qrDialog=ref(false); const qrOrder=ref<any>(null); const qrPaying=ref(false); const qrCountdown=ref(5)
+let qrTimer:any=null; let qrCountTimer:any=null
+async function showQR(row:any){ const res:any=await request.post(`/weChatPay/getNativeCodeUrl/${row.order_id}`); qr.value=res?.data ?? null; qrOrder.value=row; qrPaying.value=false; qrCountdown.value=5; qrDialog.value=true }
+function cancelQrTimer(){ if(qrTimer) clearTimeout(qrTimer); if(qrCountTimer) clearInterval(qrCountTimer); qrTimer=null; qrCountTimer=null; qrPaying.value=false }
+async function onQrClick(){
+  if(!qrOrder.value || qrPaying.value) return
+  qrPaying.value=true; qrCountdown.value=5
+  ElMessage.info('已点击二维码，5秒后自动支付成功')
+  qrCountTimer=setInterval(()=>{ if(qrCountdown.value>1) qrCountdown.value--; else clearInterval(qrCountTimer) }, 1000)
+  qrTimer=setTimeout(async()=>{
+    try{ await request.post(`/feeOrder/updateById/${qrOrder.value.order_id}`); ElMessage.success('支付成功'); qrDialog.value=false; cancelQrTimer(); loadOrders(); loadTuition() }catch{ qrPaying.value=false; if(qrCountTimer) clearInterval(qrCountTimer) }
+  }, 5000)
+}
 async function confirm(row:any){ await request.post(`/feeOrder/updateById/${row.order_id}`); ElMessage.success('支付成功'); loadOrders(); loadTuition() }
 onMounted(()=>{ loadTuition(); loadOrders() })
 </script>

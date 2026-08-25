@@ -1,10 +1,13 @@
 <template>
   <el-card>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <h3>学生档案</h3>
-      <div>
-        <el-input v-model="query.name" placeholder="姓名" clearable style="width:140px;margin-right:6px"/>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+        <el-select v-model="query.collegeId" placeholder="学院" clearable style="width:170px" @change="onCollegeChange"><el-option v-for="c in collegeOptions" :key="c.dept_id" :label="c.dept_name" :value="c.dept_id"/></el-select>
+        <el-select v-model="query.majorId" placeholder="专业" clearable style="width:190px"><el-option v-for="m in majorOptions" :key="m.dept_id" :label="m.dept_name" :value="m.dept_id"/></el-select>
+        <el-input v-model="query.name" placeholder="姓名" clearable style="width:130px"/>
         <el-button type="primary" @click="search">查询</el-button>
+        <el-button @click="resetSearch">重置</el-button>
         <el-button type="success" @click="openAdd()">新生建档</el-button>
       </div>
     </div>
@@ -67,8 +70,20 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { usePage } from '@/composables/usePage'
 import request from '@/utils/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
-const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChange, handleSizeChange, search } = usePage('/student/queryByPage', {name:''})
+const { loading, total, pageNo, pageSize, query, list, fetch, handleCurrentChange, handleSizeChange, search } = usePage('/student/queryByPage', {name:'', collegeId:'', majorId:''}) as any
 fetch()
+const collegeOptions=computed(()=> deptTree.value.filter((d:any)=> d.parent_id===0))
+const majorOptions=computed(()=>{
+  if(!query.collegeId){
+    const all:any[]=[]
+    const dfs=(arr:any[])=>{ for(const d of arr){ if(d.parent_id!==0) all.push(d); if(d.children) dfs(d.children) } }
+    dfs(deptTree.value); return all
+  }
+  const col=deptTree.value.find((d:any)=> d.dept_id===query.collegeId)
+  return col?.children||[]
+})
+function onCollegeChange(){ query.majorId=''; }
+function resetSearch(){ query.name=''; query.collegeId=''; query.majorId=''; search() }
 const deptTree=ref<any[]>([])
 const deptMap=ref<Record<string,string>>({})
 const parentMap=ref<Record<string,number>>({})
@@ -85,7 +100,7 @@ async function loadDepts(){
   deptMap.value=m; parentMap.value=pm
 }
 async function loadClasses(){
-  const res:any=await request.post('/class/queryByPage', {pageNo:1,pageSize:500,data:{}})
+  const res:any=await request.post('/class/queryByPage', {pageNo:1,pageSize:1000,data:{}})
   const lst=res.data.list||[]
   classOptions.value=lst
   const m:Record<string,string>={}

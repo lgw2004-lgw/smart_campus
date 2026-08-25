@@ -13,8 +13,10 @@ const router = createRouter({
         // academic
         { path: 'academic/course', component: () => import('@/views/academic/Course.vue'), meta: { title: '课程管理' } },
         { path: 'academic/scheduling', component: () => import('@/views/academic/Scheduling.vue'), meta: { title: '排课管理' } },
+        { path: 'academic/plan', component: () => import('@/views/academic/Plan.vue'), meta: { title: '培养方案' } },
         { path: 'academic/enrollment', component: () => import('@/views/academic/Enrollment.vue'), meta: { title: '选课管理' } },
         { path: 'academic/score', component: () => import('@/views/academic/Score.vue'), meta: { title: '成绩管理' } },
+        { path: 'resource/classroom', component: () => import('@/views/resource/Classroom.vue'), meta: { title: '教室管理' } },
         // student
         { path: 'student/list', component: () => import('@/views/student/List.vue'), meta: { title: '学生档案' } },
         { path: 'student/class', component: () => import('@/views/student/Class.vue'), meta: { title: '班级管理' } },

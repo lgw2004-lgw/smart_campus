@@ -12,6 +12,25 @@
         <el-button type="success" plain @click="dialogAssign=true">分配宿舍</el-button>
       </div>
     </div>
+    <el-card shadow="never" style="margin-bottom:12px">
+      <template #header><span style="font-weight:600">宿舍选房发布（管理员统一发布·设置截止时间）</span></template>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <el-select v-model="publishForm.collegeId" placeholder="选择书院（空为全部）" clearable style="width:200px">
+          <el-option v-for="c in colleges" :key="c.dept_id" :label="c.dept_name" :value="c.dept_id" />
+        </el-select>
+        <el-date-picker v-model="publishForm.endTime" type="datetime" placeholder="截止时间" value-format="YYYY-MM-DD HH:mm:ss" style="width:220px" />
+        <el-button type="primary" @click="doPublish">发布</el-button>
+        <el-button @click="loadPublishes">刷新</el-button>
+      </div>
+      <el-table :data="publishList" size="small" border style="margin-top:10px">
+        <el-table-column label="书院" width="160"><template #default="{row}">{{ row.college_id ? (collegeMap[row.college_id]||row.college_id) : '全部书院' }}</template></el-table-column>
+        <el-table-column prop="start_time" label="发布时间" width="180" />
+        <el-table-column prop="end_time" label="截止时间" width="180" />
+        <el-table-column prop="is_published" label="状态" width="90"><template #default="{row}"><el-tag :type="row.is_published==='1'?'success':'info'" size="small">{{ row.is_published==='1'?'已发布':'未发布' }}</el-tag></template></el-table-column>
+        <el-table-column label="操作" width="100"><template #default="{row}"><el-button size="small" type="danger" @click="deletePublish(row)">删除</el-button></template></el-table-column>
+      </el-table>
+    </el-card>
+
     <el-table :data="list" v-loading="loading" border>
       <el-table-column prop="room_no" label="房号" width="100"/>
       <el-table-column label="楼栋" width="140"><template #default="{row}">{{ buildingMap[row.building_id] || row.building_id }}</template></el-table-column>
@@ -93,6 +112,10 @@ fetch()
 
 const buildingOptions=ref<any[]>([])
 const buildingMap=ref<Record<string,string>>({})
+const colleges=ref<any[]>([])
+const collegeMap=ref<Record<string,string>>({})
+const publishList=ref<any[]>([])
+const publishForm=reactive<any>({collegeId:'', endTime:''})
 const buildingPageNo=ref(1)
 const buildingPageSize=ref(10)
 const buildingPaged=computed(()=> {
@@ -105,7 +128,22 @@ async function loadBuildings(){
   buildingPageNo.value=1
   const m:Record<string,string>={}; for(const b of buildingOptions.value) m[b.building_id]=b.building_name; buildingMap.value=m
 }
-onMounted(loadBuildings)
+async function loadColleges(){
+  try{ const r:any=await request.get('/dept/tree'); const cols:any[]=[]; const mp:Record<string,string>={}; const walk=(arr:any[])=>{ for(const n of arr){ mp[n.dept_id]=n.dept_name; if(n.parent_id===0) cols.push(n); if(n.children) walk(n.children)} }; walk(r.data||[]); colleges.value=cols; collegeMap.value=mp }catch{}
+}
+async function loadPublishes(){
+  try{ const r:any=await request.post('/dormPublish/queryByPage',{pageNo:1,pageSize:20,data:{}}); publishList.value=r.data.list||[] }catch{}
+}
+async function doPublish(){
+  if(!publishForm.endTime) return ElMessage.warning('请选择截止时间')
+  await request.post('/dormPublish/save',{collegeId: publishForm.collegeId||null, endTime: publishForm.endTime, isPublished:'1'})
+  ElMessage.success('发布成功'); publishForm.endTime=''; loadPublishes()
+}
+async function deletePublish(row:any){
+  try{ await ElMessageBox.confirm('确认删除该发布？','删除',{type:'warning'}) }catch{ return }
+  await request.post(`/dormPublish/delete/${row.publish_id}`); ElMessage.success('已删除'); loadPublishes()
+}
+onMounted(async()=>{ await loadBuildings(); await loadColleges(); await loadPublishes() })
 
 // 房间增改删
 const dialogRoom=ref(false)

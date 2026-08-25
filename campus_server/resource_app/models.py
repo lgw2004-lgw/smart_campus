@@ -36,6 +36,18 @@ class ResDormAssign(models.Model):
         db_table = 'res_dorm_assign'
         managed = False
 
+class ResDormPublish(models.Model):
+    publish_id = models.BigAutoField(primary_key=True)
+    college_id = models.BigIntegerField(null=True)
+    start_time = models.DateTimeField(null=True)
+    end_time = models.DateTimeField(null=True)
+    is_published = models.CharField(max_length=1, default='0')
+    create_time = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'res_dorm_publish'
+        managed = False
+
 class ResBook(models.Model):
     book_id = models.BigAutoField(primary_key=True)
     book_name = models.CharField(max_length=200)

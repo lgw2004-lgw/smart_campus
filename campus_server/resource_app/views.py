@@ -2,9 +2,25 @@ from utils.base_view import BaseView
 from utils.response import success, error, page_response
 from utils.pagination import get_page_params
 from utils.gen_id import gen_id
-from .models import ResBuilding, ResRoom, ResDormAssign, ResBook, ResBorrow
-from django.db.models import F
+from .models import ResBuilding, ResRoom, ResDormAssign, ResBook, ResBorrow, ResDormPublish
+from django.db.models import F, Q
 import datetime
+from django.utils import timezone
+
+def _is_publish_open(college_id=None):
+    now = datetime.datetime.now()
+    qs = ResDormPublish.objects.filter(is_published='1')
+    if college_id is not None:
+        qs = qs.filter(Q(college_id__isnull=True) | Q(college_id=college_id))
+    qs = qs.filter(Q(start_time__isnull=True) | Q(start_time__lte=now)).filter(Q(end_time__isnull=True) | Q(end_time__gte=now))
+    return qs.exists()
+
+def _get_open_college_ids():
+    now = datetime.datetime.now()
+    pubs = ResDormPublish.objects.filter(is_published='1').filter(Q(start_time__isnull=True) | Q(start_time__lte=now)).filter(Q(end_time__isnull=True) | Q(end_time__gte=now))
+    if pubs.filter(college_id__isnull=True).exists():
+        return None
+    return list(pubs.values_list('college_id', flat=True))
 
 # 宿舍楼栋
 class BuildingQueryByPageView(BaseView):
@@ -66,10 +82,20 @@ class DormQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = ResRoom.objects.all()
+        if data.get('collegeId'):
+            bids=list(ResBuilding.objects.filter(dept_id=data['collegeId']).values_list('building_id', flat=True))
+            qs = qs.filter(building_id__in=bids) if bids else qs.none()
         if data.get('buildingId'):
             qs = qs.filter(building_id=data['buildingId'])
         if data.get('roomNo'):
             qs = qs.filter(room_no__icontains=data['roomNo'])
+        if data.get('checkPublish'):
+            open_ids=_get_open_college_ids()
+            if open_ids is not None:
+                if not open_ids:
+                    return page_response([], 0, page_no, page_size)
+                bids=list(ResBuilding.objects.filter(dept_id__in=open_ids).values_list('building_id', flat=True))
+                qs = qs.filter(building_id__in=bids) if bids else qs.none()
         total = qs.count()
         lst = list(qs[(page_no-1)*page_size: page_no*page_size].values())
         return page_response(lst, total, page_no, page_size)
@@ -81,6 +107,13 @@ class DormAssignView(BaseView):
         building_id = body['buildingId']
         room_id = body['roomId']
         bed_no = body.get('bedNo', 1)
+        # 发布校验
+        try:
+            b = ResBuilding.objects.get(building_id=building_id)
+            if not _is_publish_open(b.dept_id):
+                return error("宿舍选房未发布或已截止", code=400)
+        except ResBuilding.DoesNotExist:
+            return error("楼栋不存在", code=404)
         # 校验床位
         try:
             room = ResRoom.objects.get(room_id=room_id)
@@ -101,6 +134,13 @@ class DormExchangeView(BaseView):
         student_id = body['studentId']
         new_room_id = body['roomId']
         new_building_id = body.get('buildingId')
+        # 发布校验
+        try:
+            nb = ResBuilding.objects.get(building_id=new_building_id or ResRoom.objects.get(room_id=new_room_id).building_id)
+            if not _is_publish_open(nb.dept_id):
+                return error("宿舍选房未发布或已截止", code=400)
+        except Exception:
+            pass
         try:
             assign = ResDormAssign.objects.get(student_id=student_id)
         except ResDormAssign.DoesNotExist:
@@ -142,6 +182,54 @@ class DormCheckoutView(BaseView):
             ResRoom.objects.filter(room_id=room_id).update(occupied=max(0, room.occupied-1))
         except Exception:
             pass
+        return success()
+
+# 宿舍发布
+class DormPublishSaveView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        college_id = body.get('collegeId')
+        end_time = body.get('endTime')
+        start_time = body.get('startTime')
+        is_published = body.get('isPublished') or body.get('is_published') or '1'
+        if not end_time:
+            return error("结束时间必填", code=400)
+        # parse end_time
+        try:
+            from dateutil import parser as dp
+            end_dt = dp.parse(str(end_time))
+        except:
+            try:
+                end_dt = datetime.datetime.strptime(str(end_time), '%Y-%m-%d %H:%M:%S')
+            except:
+                end_dt = datetime.datetime.strptime(str(end_time), '%Y-%m-%d')
+        try:
+            start_dt = dp.parse(str(start_time)) if start_time else datetime.datetime.now()
+        except:
+            start_dt = datetime.datetime.now()
+        pid = body.get('publishId')
+        if pid:
+            ResDormPublish.objects.filter(publish_id=pid).update(college_id=college_id, start_time=start_dt, end_time=end_dt, is_published=is_published)
+            return success({"publishId": int(pid)})
+        obj = ResDormPublish.objects.create(college_id=college_id, start_time=start_dt, end_time=end_dt, is_published=is_published)
+        return success({"publishId": obj.publish_id})
+
+class DormPublishQueryView(BaseView):
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        qs = ResDormPublish.objects.all()
+        if data.get('collegeId'):
+            qs = qs.filter(college_id=data['collegeId'])
+        total = qs.count()
+        lst = list(qs.order_by('-create_time')[(page_no-1)*page_size: page_no*page_size].values())
+        return page_response(lst, total, page_no, page_size)
+
+class DormPublishDeleteView(BaseView):
+    def post(self, request, publish_id=None):
+        pid = publish_id or self.parse_body(request).get('publishId')
+        if not pid:
+            return error("publishId必填", code=400)
+        ResDormPublish.objects.filter(publish_id=pid).delete()
         return success()
 
 # 图书

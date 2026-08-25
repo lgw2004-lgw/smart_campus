@@ -49,6 +49,7 @@ class AcaCourse(models.Model):
     credit = models.DecimalField(max_digits=3, decimal_places=1, null=True)
     hours = models.IntegerField(null=True)
     dept_id = models.BigIntegerField(null=True)
+    course_type = models.CharField(max_length=20, null=True, verbose_name='课程类型')
     status = models.CharField(max_length=1, default='0')
     create_time = models.DateTimeField(auto_now_add=True)
 
@@ -62,13 +63,45 @@ class AcaScheduling(models.Model):
     teacher_id = models.BigIntegerField(null=True)
     classroom_id = models.BigIntegerField(null=True)
     scheduling_day = models.DateField(null=True)
-    section_type = models.CharField(max_length=1)
+    section_type = models.CharField(max_length=4, default='1')
     scheduling_type = models.CharField(max_length=1, default='1')
+    semester = models.CharField(max_length=20, null=True)
+    weekday = models.IntegerField(null=True)
+    start_week = models.IntegerField(null=True)
+    end_week = models.IntegerField(null=True)
+    major_id = models.BigIntegerField(null=True)
+    capacity = models.IntegerField(null=True)
+    is_published = models.CharField(max_length=1, default='0')
 
     class Meta:
         db_table = 'aca_scheduling'
         managed = False
-        unique_together = (('teacher_id','scheduling_day','section_type'),)
+
+class AcaClassroom(models.Model):
+    classroom_id = models.BigAutoField(primary_key=True)
+    college_id = models.BigIntegerField(null=True)
+    room_no = models.CharField(max_length=20)
+    floor = models.IntegerField(null=True)
+    capacity = models.IntegerField(default=50)
+
+    class Meta:
+        db_table = 'aca_classroom'
+        managed = False
+        unique_together = (('room_no',),)
+
+class AcaPlan(models.Model):
+    plan_id = models.BigAutoField(primary_key=True)
+    major_id = models.BigIntegerField(null=True)
+    course_id = models.CharField(max_length=20, null=True)
+    year_no = models.IntegerField(default=1)
+    term = models.IntegerField(default=1)
+    is_required = models.CharField(max_length=1, default='1')
+    credit = models.DecimalField(max_digits=3, decimal_places=1, null=True)
+
+    class Meta:
+        db_table = 'aca_plan'
+        managed = False
+        unique_together = (('major_id','course_id'),)
 
 class AcaEnrollment(models.Model):
     enroll_id = models.CharField(primary_key=True, max_length=20)

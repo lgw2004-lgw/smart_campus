@@ -40,6 +40,8 @@
           <el-menu-item index="/home"><el-icon><House /></el-icon>校园首页</el-menu-item>
           <el-menu-item index="/courses"><el-icon><Reading /></el-icon>选课大厅<el-tag size="small" style="margin-left:auto" type="warning">选课中</el-tag></el-menu-item>
           <el-menu-item index="/my-enroll"><el-icon><List /></el-icon>我的选课</el-menu-item>
+          <el-menu-item index="/timetable"><el-icon><Calendar /></el-icon>我的课表</el-menu-item>
+          <el-menu-item index="/plan"><el-icon><Notebook /></el-icon>个人培养方案</el-menu-item>
           <el-menu-item index="/my-fee"><el-icon><Wallet /></el-icon>一卡通·缴费</el-menu-item>
           <el-menu-item index="/my-dorm"><el-icon><OfficeBuilding /></el-icon>宿舍服务</el-menu-item>
           <el-menu-item index="/my-book"><el-icon><Notebook /></el-icon>图书馆</el-menu-item>

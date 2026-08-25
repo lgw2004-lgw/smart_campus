@@ -3,11 +3,14 @@ from .views import (
     StudentQueryByIdCardView, StudentQueryByIdView, StudentAddView, StudentQueryByPageView, StudentFileAddView, StudentFileQueryView, StudentDeleteView, StudentArchiveView,
     CourseQueryByPageView, CourseSaveView, CourseDeleteView, CourseSelectableView,
     SchedulingSelectView, SchedulingAddView, SchedulingUpdateView, SchedulingDeleteView,
+    SchedulingPublishView, SchedulingBulkForMajorView, SchedulingSelectableView, SchedulingStudentTimetableView,
     EnrollmentAddView, EnrollmentCancelView, EnrollmentUpdateView, EnrollmentQueryByPageView, EnrollmentWorkNumView,
     ExamQueryByPageView, ExamAddView,
     ScoreAddView, ScoreImportView, ScoreQueryByPageView, ScoreRankView, ScoreDeleteView,
     AttendanceMarkView, AttendanceQueryView,
-    ClassQueryByPageView, ClassSaveView, ClassDeleteView
+    ClassQueryByPageView, ClassSaveView, ClassDeleteView,
+    ClassroomQueryByPageView, ClassroomSaveView, ClassroomDeleteView,
+    PlanQueryByMajorView, PlanSaveView, PlanDeleteView, PlanStudentView,
 )
 
 urlpatterns = [
@@ -33,6 +36,10 @@ urlpatterns = [
     path('scheduling/update', SchedulingUpdateView.as_view()),
     path('scheduling/delete/<int:id>', SchedulingDeleteView.as_view()),
     path('scheduling/delete', SchedulingDeleteView.as_view()),
+    path('scheduling/publish', SchedulingPublishView.as_view()),
+    path('scheduling/bulkForMajor', SchedulingBulkForMajorView.as_view()),
+    path('scheduling/querySelectable', SchedulingSelectableView.as_view()),
+    path('scheduling/queryStudentTimetable', SchedulingStudentTimetableView.as_view()),
 
     path('enrollment/add', EnrollmentAddView.as_view()),
     path('enrollment/cancel/<str:enroll_id>', EnrollmentCancelView.as_view()),
@@ -58,4 +65,15 @@ urlpatterns = [
     path('class/save', ClassSaveView.as_view()),
     path('class/delete/<int:class_id>', ClassDeleteView.as_view()),
     path('class/delete', ClassDeleteView.as_view()),
+
+    path('classroom/queryByPage', ClassroomQueryByPageView.as_view()),
+    path('classroom/save', ClassroomSaveView.as_view()),
+    path('classroom/delete/<int:classroom_id>', ClassroomDeleteView.as_view()),
+    path('classroom/delete', ClassroomDeleteView.as_view()),
+
+    path('plan/queryByMajor', PlanQueryByMajorView.as_view()),
+    path('plan/save', PlanSaveView.as_view()),
+    path('plan/delete/<int:plan_id>', PlanDeleteView.as_view()),
+    path('plan/delete', PlanDeleteView.as_view()),
+    path('plan/queryStudentPlan', PlanStudentView.as_view()),
 ]

@@ -3,7 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
 const proxyTarget = 'http://127.0.0.1:18367'
-const apiPrefixes = ['/userAuth','/memberAuth','/user','/role','/menu','/dept','/dict','/dictData','/dictType','/notice','/news','/banner','/loginInfo','/operLog','/student','/studentFile','/course','/scheduling','/enrollment','/exam','/examPaper','/score','/class','/dorm','/building','/room','/media','/book','/borrow','/fee','/weChatPay','/feeOrder']
+const apiPrefixes = ['/userAuth','/memberAuth','/user','/role','/menu','/dept','/dict','/dictData','/dictType','/notice','/news','/banner','/loginInfo','/operLog','/student','/studentFile','/course','/scheduling','/enrollment','/exam','/examPaper','/score','/class','/dorm','/building','/room','/media','/book','/borrow','/fee','/weChatPay','/feeOrder','/plan','/classroom','/attendance']
 const proxy: Record<string, any> = {}
 for (const p of apiPrefixes) {
   proxy[p] = {

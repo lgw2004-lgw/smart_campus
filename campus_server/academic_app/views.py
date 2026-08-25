@@ -2,7 +2,7 @@ from utils.base_view import BaseView
 from utils.response import success, error, page_response
 from utils.pagination import get_page_params
 from utils.gen_id import gen_id
-from .models import StuStudent, StuStudentFile, StuClass, AcaCourse, AcaScheduling, AcaEnrollment, AcaExam, AcaScore, AcaAttendance
+from .models import StuStudent, StuStudentFile, StuClass, AcaCourse, AcaScheduling, AcaEnrollment, AcaExam, AcaScore, AcaAttendance, AcaClassroom, AcaPlan
 import json
 
 def _get_jwc_college(request):
@@ -168,8 +168,16 @@ class StudentQueryByPageView(BaseView):
                 qs=qs.filter(dept_id__in=allowed)
         if data.get('name'):
             qs = qs.filter(name__icontains=data['name'])
-        if data.get('deptId'):
-            qs = qs.filter(dept_id=data['deptId'])
+        if data.get('collegeId'):
+            try:
+                from system_app.models import SysDept
+                mids=list(SysDept.objects.filter(parent_id=data['collegeId']).values_list('dept_id', flat=True))
+                qs = qs.filter(dept_id__in=mids) if mids else qs.none()
+            except:
+                pass
+        if data.get('deptId') or data.get('majorId'):
+            mid=data.get('deptId') or data.get('majorId')
+            qs = qs.filter(dept_id=mid)
         if data.get('classId'):
             qs = qs.filter(class_id=data['classId'])
         total = qs.count()
@@ -216,6 +224,8 @@ class CourseQueryByPageView(BaseView):
                 qs=qs.filter(dept_id__in=allowed)
         if data.get('courseName'):
             qs = qs.filter(course_name__icontains=data['courseName'])
+        if data.get('courseType'):
+            qs = qs.filter(course_type=data['courseType'])
         if data.get('status'):
             qs = qs.filter(status=data['status'])
         total = qs.count()
@@ -226,14 +236,15 @@ class CourseSaveView(BaseView):
     def post(self, request):
         body = self.parse_body(request)
         cid = body.get('courseId') or gen_id('COUR')
+        course_type = body.get('courseType')
         if AcaCourse.objects.filter(course_id=cid).exists():
-            AcaCourse.objects.filter(course_id=cid).update(course_name=body.get('courseName'), credit=body.get('credit'), hours=body.get('hours'), dept_id=body.get('deptId'), status=body.get('status','0'))
+            AcaCourse.objects.filter(course_id=cid).update(course_name=body.get('courseName'), credit=body.get('credit'), hours=body.get('hours'), dept_id=body.get('deptId'), course_type=course_type, status=body.get('status','0'))
             # 同步 course_code 若传
             if body.get('courseCode'):
                 AcaCourse.objects.filter(course_id=cid).update(course_code=body.get('courseCode'))
             return success({"courseId": cid})
         try:
-            c = AcaCourse.objects.create(course_id=cid, course_name=body['courseName'], course_code=body.get('courseCode') or cid, credit=body.get('credit',3), hours=body.get('hours',48), dept_id=body.get('deptId'), status=body.get('status','0'))
+            c = AcaCourse.objects.create(course_id=cid, course_name=body['courseName'], course_code=body.get('courseCode') or cid, credit=body.get('credit',3), hours=body.get('hours',48), dept_id=body.get('deptId'), course_type=course_type, status=body.get('status','0'))
         except Exception as e:
             return error(str(e))
         return success({"courseId": c.course_id})
@@ -284,11 +295,15 @@ class SchedulingSelectView(BaseView):
             qs = qs.filter(course_id=body['courseId'])
         if body.get('teacherId'):
             qs = qs.filter(teacher_id=body['teacherId'])
-        if body.get('schedulingDay'):
-            qs = qs.filter(scheduling_day=body['schedulingDay'])
-        if body.get('sectionType'):
-            qs = qs.filter(section_type=body['sectionType'])
-        lst = list(qs.values())
+        if body.get('semester'):
+            qs = qs.filter(semester=body['semester'])
+        if body.get('majorId'):
+            qs = qs.filter(major_id=body['majorId'])
+        if body.get('weekday'):
+            qs = qs.filter(weekday=body['weekday'])
+        if body.get('isPublished'):
+            qs = qs.filter(is_published=body['isPublished'])
+        lst = list(qs.order_by('weekday','section_type').values())
         return success(lst)
 
 class SchedulingAddView(BaseView):
@@ -296,25 +311,23 @@ class SchedulingAddView(BaseView):
         body = self.parse_body(request)
         def gv(camel, snake): return body.get(camel) if body.get(camel) is not None else body.get(snake)
         teacher_id = gv('teacherId','teacher_id')
-        scheduling_day = gv('schedulingDay','scheduling_day')
-        section_type = gv('sectionType','section_type')
+        section_type = gv('sectionType','section_type') or '1'
         course_id = gv('courseId','course_id')
         classroom_id = gv('classroomId','classroom_id')
-        scheduling_type = gv('schedulingType','scheduling_type') or '1'
-        if not teacher_id or not scheduling_day or not section_type:
-            return error("teacherId/schedulingDay/sectionType必填", code=400)
-        obj, created = AcaScheduling.objects.update_or_create(
-            teacher_id=teacher_id,
-            scheduling_day=scheduling_day,
-            section_type=section_type,
-            defaults={
-                'course_id': course_id,
-                'classroom_id': classroom_id,
-                'scheduling_type': scheduling_type,
-            }
-        )
-        if classroom_id and AcaScheduling.objects.filter(classroom_id=classroom_id, scheduling_day=scheduling_day, section_type=section_type).exclude(id=obj.id).exists():
-            return error("教室时间冲突", code=400)
+        semester = gv('semester','semester')
+        weekday = gv('weekday','weekday')
+        start_week = gv('startWeek','start_week')
+        end_week = gv('endWeek','end_week')
+        major_id = gv('majorId','major_id')
+        capacity = gv('capacity','capacity')
+        scheduling_day = gv('schedulingDay','scheduling_day')
+        if not course_id or not teacher_id or not semester:
+            return error("courseId/teacherId/semester必填", code=400)
+        sid = gv('id','id')
+        if sid:
+            AcaScheduling.objects.filter(id=sid).update(course_id=course_id, teacher_id=teacher_id, classroom_id=classroom_id, semester=semester, weekday=weekday, start_week=start_week, end_week=end_week, major_id=major_id, capacity=capacity, section_type=section_type, scheduling_day=scheduling_day)
+            return success({"id": int(sid)})
+        obj = AcaScheduling.objects.create(course_id=course_id, teacher_id=teacher_id, classroom_id=classroom_id, semester=semester, weekday=weekday, start_week=start_week, end_week=end_week, major_id=major_id, capacity=capacity, section_type=section_type, scheduling_day=scheduling_day)
         return success({"id": obj.id})
 
 class SchedulingUpdateView(BaseView):
@@ -338,24 +351,42 @@ class EnrollmentAddView(BaseView):
     def post(self, request):
         body = self.parse_body(request)
         student_id = body.get('studentId') or body.get('student_id')
-        course_id = body.get('courseId') or body.get('course_id')
         schedule_id = body.get('scheduleId') or body.get('schedule_id')
-        if not student_id or not course_id:
-            return error("studentId与courseId必填", code=400)
+        if not student_id or not schedule_id:
+            return error("studentId与scheduleId必填", code=400)
+        try:
+            sch = AcaScheduling.objects.get(id=schedule_id)
+        except AcaScheduling.DoesNotExist:
+            return error("排课记录不存在", code=404)
+        course_id = sch.course_id
+        if sch.is_published != '1':
+            return error("该课程尚未发布，无法选课", code=400)
         try:
             stu = StuStudent.objects.get(student_id=student_id)
             if stu.is_final == '1':
                 return error("课程已完成，无法重复修读（已归档）", code=400)
+            stu_major = None
+            if stu.class_id:
+                c = StuClass.objects.filter(class_id=stu.class_id).first()
+                if c: stu_major = c.dept_id
         except StuStudent.DoesNotExist:
             return error("学生不存在", code=404)
+        # 专业课仅本专业可选；公共/通识课全校可修
         try:
             crs = AcaCourse.objects.get(course_id=course_id)
             if crs.status == '1':
                 return error("课程已停用，无法选课", code=400)
+            if crs.course_type not in ('public_basic','general') and sch.major_id and stu_major and sch.major_id != stu_major:
+                return error("该课程仅面向开课专业学生", code=400)
         except AcaCourse.DoesNotExist:
             return error("课程不存在", code=404)
         if AcaEnrollment.objects.filter(student_id=student_id, course_id=course_id, status__in=['0','1']).exists():
             return error("已选该课程", code=400)
+        # 容量校验
+        if sch.capacity:
+            cnt = AcaEnrollment.objects.filter(schedule_id=schedule_id, status__in=['0','1']).count()
+            if cnt >= sch.capacity:
+                return error("该教学班已满员", code=400)
         # 总学费校验：需先缴纳当前学期总学费（TUITION 订单已付）
         try:
             from finance_app.models import FeeOrder, FeeTuitionConfig, FeeOrderItem
@@ -724,3 +755,245 @@ class AttendanceQueryView(BaseView):
         total = qs.count()
         lst = list(qs.order_by('-create_time')[(page_no-1)*page_size: page_no*page_size].values())
         return page_response(lst, total, page_no, page_size)
+# ---- 教室（教学楼） ----
+class ClassroomQueryByPageView(BaseView):
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        qs = AcaClassroom.objects.all()
+        if data.get('collegeId'):
+            qs = qs.filter(college_id=data['collegeId'])
+        if data.get('roomNo'):
+            qs = qs.filter(room_no__icontains=data['roomNo'])
+        total = qs.count()
+        lst = list(qs.order_by('room_no')[(page_no-1)*page_size: page_no*page_size].values())
+        return page_response(lst, total, page_no, page_size)
+
+class ClassroomSaveView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        rid = body.get('classroomId') or body.get('classroom_id')
+        room_no = body.get('roomNo') or body.get('room_no')
+        if not room_no:
+            return error("roomNo required", code=400)
+        if rid:
+            AcaClassroom.objects.filter(classroom_id=rid).update(college_id=body.get('collegeId'), room_no=room_no, floor=body.get('floor'), capacity=body.get('capacity'))
+            return success({"classroomId": int(rid)})
+        obj = AcaClassroom.objects.create(college_id=body.get('collegeId'), room_no=room_no, floor=body.get('floor'), capacity=body.get('capacity') or 50)
+        return success({"classroomId": obj.classroom_id})
+
+class ClassroomDeleteView(BaseView):
+    def post(self, request, classroom_id=None):
+        rid = classroom_id or self.parse_body(request).get('classroomId') or self.parse_body(request).get('classroom_id')
+        if not rid:
+            return error("classroomId required", code=400)
+        AcaClassroom.objects.filter(classroom_id=rid).delete()
+        return success()
+
+
+# ---- 培养方案 ----
+class PlanQueryByMajorView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        major_id = body.get('majorId') or body.get('major_id')
+        qs = AcaPlan.objects.all()
+        if major_id:
+            qs = qs.filter(major_id=major_id)
+        lst = list(qs.order_by('year_no','term').values())
+        cinfo = {c.course_id: c for c in AcaCourse.objects.all()}
+        out = []
+        for p in lst:
+            c = cinfo.get(p['course_id'])
+            p['course_name'] = c.course_name if c else 'unknown'
+            p['credit'] = float(c.credit) if c and c.credit is not None else (float(p['credit']) if p['credit'] else 0)
+            p['course_type'] = c.course_type if c else ''
+            out.append(p)
+        return success(out)
+
+class PlanSaveView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        major_id = body.get('majorId') or body.get('major_id')
+        course_id = body.get('courseId') or body.get('course_id')
+        if not major_id or not course_id:
+            return error("majorId and courseId required", code=400)
+        credit = body.get('credit')
+        if credit is None:
+            c = AcaCourse.objects.filter(course_id=course_id).first()
+            credit = float(c.credit) if c and c.credit else 0
+        obj, _ = AcaPlan.objects.update_or_create(major_id=major_id, course_id=course_id, defaults={'year_no': body.get('yearNo',1), 'term': body.get('term',1), 'is_required': body.get('isRequired','1'), 'credit': credit})
+        return success({"planId": obj.plan_id})
+
+class PlanDeleteView(BaseView):
+    def post(self, request, plan_id=None):
+        pid = plan_id or self.parse_body(request).get('planId') or self.parse_body(request).get('plan_id')
+        if not pid:
+            return error("planId required", code=400)
+        AcaPlan.objects.filter(plan_id=pid).delete()
+        return success()
+
+class PlanStudentView(BaseView):
+    """GET /plan/queryStudentPlan?studentId= 返回学生个人培养方案与总学分"""
+    def get(self, request):
+        sid = request.GET.get('studentId') or request.GET.get('student_id')
+        try:
+            stu = StuStudent.objects.get(student_id=sid)
+        except StuStudent.DoesNotExist:
+            return error("student not found", code=404)
+        major_id = None
+        if stu.class_id:
+            c = StuClass.objects.filter(class_id=stu.class_id).first()
+            if c: major_id = c.dept_id
+        if not major_id:
+            return error("student has no major", code=400)
+        plans = list(AcaPlan.objects.filter(major_id=major_id).values())
+        cinfo = {c.course_id: c for c in AcaCourse.objects.all()}
+        total = 0.0
+        for p in plans:
+            c = cinfo.get(p['course_id'])
+            p['course_name'] = c.course_name if c else 'unknown'
+            p['course_type'] = c.course_type if c else ''
+            cr = float(c.credit) if c and c.credit is not None else (float(p['credit']) if p['credit'] else 0)
+            p['credit'] = cr
+            total += cr
+        return success({"majorId": major_id, "totalCredit": total, "list": plans})
+
+
+# ---- 排课发布 / 按专业批量排课 ----
+class SchedulingPublishView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        published = '1' if str(body.get('published', '1')) == '1' else '0'
+        ids = body.get('ids') or []
+        major_id = body.get('majorId')
+        semester = body.get('semester')
+        q = AcaScheduling.objects.all()
+        if ids:
+            q = q.filter(id__in=ids)
+        else:
+            if major_id: q = q.filter(major_id=major_id)
+            if semester: q = q.filter(semester=semester)
+        n = q.update(is_published=published)
+        return success({"updated": n, "published": published})
+
+class SchedulingBulkForMajorView(BaseView):
+    """POST /scheduling/bulkForMajor {majorId, semester} 把该专业培养方案里的必修课批量排课"""
+    def post(self, request):
+        body = self.parse_body(request)
+        major_id = body.get('majorId') or body.get('major_id')
+        semester = body.get('semester')
+        if not major_id or not semester:
+            return error("majorId and semester required", code=400)
+        plans = AcaPlan.objects.filter(major_id=major_id, is_required='1')
+        if not plans.exists():
+            return error("major has no plan", code=400)
+        from system_app.models import SysUser, SysDept
+        college = SysDept.objects.filter(dept_id=major_id).first()
+        college_id = college.parent_id if college and college.parent_id else major_id
+        teachers = list(SysUser.objects.filter(dept_id__in=_allowed_dept_ids(college_id), user_type__in=['1','8'], status='0', del_flag='0').values_list('user_id', flat=True))
+        rooms = list(AcaClassroom.objects.filter(college_id=college_id))
+        if not rooms:
+            rooms = list(AcaClassroom.objects.all())
+        if not teachers:
+            teachers = list(SysUser.objects.filter(user_type__in=['1','8'], status='0', del_flag='0').values_list('user_id', flat=True))
+        made = 0
+        sections = ['1','2','3','4','5','6']
+        for i, p in enumerate(plans):
+            c = AcaCourse.objects.filter(course_id=p.course_id).first()
+            if not c: continue
+            teacher = teachers[i % len(teachers)] if teachers else None
+            room = rooms[i % len(rooms)] if rooms else None
+            weekday = (i % 5) + 1
+            section = sections[i % len(sections)]
+            cap = room.capacity if room else 50
+            AcaScheduling.objects.update_or_create(major_id=major_id, course_id=p.course_id, semester=semester, weekday=weekday, section_type=section, defaults={'teacher_id': teacher, 'classroom_id': room.classroom_id if room else None, 'start_week': 1, 'end_week': 18, 'capacity': cap, 'is_published': '0'})
+            made += 1
+        return success({"made": made})
+
+
+# ---- 学生选课大厅（已发布排课） ----
+class SchedulingSelectableView(BaseView):
+    """GET /scheduling/querySelectable?studentId=&semester=&kw=&teacherKw="""
+    def get(self, request):
+        from system_app.models import SysUser, SysDept
+        sid = request.GET.get('studentId') or request.GET.get('student_id')
+        semester = request.GET.get('semester')
+        kw = request.GET.get('kw') or ''
+        teacher_kw = request.GET.get('teacherKw') or ''
+        if not sid:
+            return error("studentId required", code=400)
+        try:
+            stu = StuStudent.objects.get(student_id=sid)
+            major_id = None
+            if stu.class_id:
+                c = StuClass.objects.filter(class_id=stu.class_id).first()
+                if c: major_id = c.dept_id
+        except StuStudent.DoesNotExist:
+            return error("student not found", code=404)
+        qs = AcaScheduling.objects.filter(is_published='1')
+        if semester:
+            qs = qs.filter(semester=semester)
+        public_types = ['public_basic','general']
+        sch_list = list(qs)
+        cinfo = {c.course_id: c for c in AcaCourse.objects.all()}
+        allowed_ids = []
+        for s in sch_list:
+            c = cinfo.get(s.course_id)
+            if not c: continue
+            if c.course_type in public_types or (s.major_id and s.major_id == major_id):
+                allowed_ids.append(s.id)
+        qs = AcaScheduling.objects.filter(id__in=allowed_ids)
+        enrolled = list(AcaEnrollment.objects.filter(student_id=sid, status__in=['0','1']).values_list('schedule_id', flat=True))
+        dinfo = {d.dept_id: d.dept_name for d in SysDept.objects.all()}
+        tinfo = {u.user_id: u.user_name for u in SysUser.objects.all()}
+        rinfo = {r.classroom_id: r for r in AcaClassroom.objects.all()}
+        out = []
+        for s in qs:
+            c = cinfo.get(s.course_id)
+            if not c: continue
+            if kw and kw not in (c.course_name or '') and kw not in (c.course_code or ''):
+                continue
+            tname = tinfo.get(s.teacher_id, '') or ''
+            if teacher_kw and teacher_kw not in tname:
+                continue
+            if s.id in enrolled:
+                continue
+            room = rinfo.get(s.classroom_id)
+            cnt = AcaEnrollment.objects.filter(schedule_id=s.id, status__in=['0','1']).count()
+            out.append({
+                'scheduleId': s.id, 'courseId': s.course_id, 'courseName': c.course_name,
+                'courseCode': c.course_code, 'hours': c.hours, 'credit': float(c.credit) if c.credit else 0,
+                'courseType': c.course_type, 'collegeId': c.dept_id, 'collegeName': dinfo.get(c.dept_id, ''),
+                'teacherId': s.teacher_id, 'teacherName': tname,
+                'classroomId': s.classroom_id, 'roomNo': room.room_no if room else '',
+                'weekday': s.weekday, 'sectionType': s.section_type, 'startWeek': s.start_week, 'endWeek': s.end_week,
+                'capacity': s.capacity, 'enrolled': cnt, 'remaining': (s.capacity or 0) - cnt,
+            })
+        return success(out)
+
+
+# ---- 学生个人课表 ----
+class SchedulingStudentTimetableView(BaseView):
+    """GET /scheduling/queryStudentTimetable?studentId=&semester="""
+    def get(self, request):
+        from system_app.models import SysUser, SysDept
+        sid = request.GET.get('studentId') or request.GET.get('student_id')
+        semester = request.GET.get('semester')
+        ens = AcaEnrollment.objects.filter(student_id=sid, status__in=['0','1'])
+        sch_ids = [e.schedule_id for e in ens if e.schedule_id]
+        cinfo = {c.course_id: c for c in AcaCourse.objects.all()}
+        dinfo = {d.dept_id: d.dept_name for d in SysDept.objects.all()}
+        tinfo = {u.user_id: u.user_name for u in SysUser.objects.all()}
+        rinfo = {r.classroom_id: r for r in AcaClassroom.objects.all()}
+        out = []
+        for s in AcaScheduling.objects.filter(id__in=sch_ids):
+            if semester and s.semester != semester:
+                continue
+            c = cinfo.get(s.course_id)
+            room = rinfo.get(s.classroom_id)
+            out.append({
+                'scheduleId': s.id, 'courseId': s.course_id, 'courseName': c.course_name if c else '',
+                'teacherId': s.teacher_id, 'teacherName': tinfo.get(s.teacher_id, ''),
+                'roomNo': room.room_no if room else '', 'weekday': s.weekday, 'sectionType': s.section_type,
+                'startWeek': s.start_week, 'endWeek': s.end_week, 'semester': s.semester,
+            })
+        return success(out)
