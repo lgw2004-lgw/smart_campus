@@ -70,6 +70,61 @@ def _allowed_dept_ids(college_id):
     except:
         return [college_id]
 
+def _current_user_ctx(request):
+    """返回当前用户上下文：user_id/user_type/college/is_admin/is_jwc/is_teacher"""
+    info = getattr(request, 'user_info', None)
+    user_id = None; user_type = ''
+    if info and isinstance(info, dict):
+        user_id = info.get('userId') or info.get('user_id')
+        user_type = str(info.get('user_type') or info.get('userType') or '')
+    if not user_id:
+        token = request.META.get('HTTP_TOKEN') or request.headers.get('token') or ''
+        if token:
+            try:
+                from utils.auth import decode_token
+                payload = decode_token(token)
+                user_id = payload.get('userId')
+                user_type = str(payload.get('user_type') or payload.get('userType') or '')
+            except:
+                pass
+    ctx = {'user_id': user_id, 'user_type': user_type, 'college': None,
+           'is_admin': user_type in ('1', '0'), 'is_jwc': False, 'is_teacher': str(user_type) == '7'}
+    if str(user_type) == '6':
+        ctx['is_jwc'] = True
+        ctx['college'] = _get_jwc_college(request)
+    if str(user_type) == '7':
+        # 教师所属学院
+        ctx['college'] = _user_college(request)
+    return ctx
+
+def _user_college(request):
+    """返回当前登录用户所属学院dept_id（含教师/教务/其他），否则None"""
+    try:
+        from system_app.models import SysUser, SysDept
+        info = getattr(request, 'user_info', None)
+        user_id = None
+        if info and isinstance(info, dict):
+            user_id = info.get('userId') or info.get('user_id')
+        if not user_id:
+            token = request.META.get('HTTP_TOKEN') or request.headers.get('token') or ''
+            if token:
+                try:
+                    from utils.auth import decode_token
+                    user_id = decode_token(token).get('userId')
+                except:
+                    pass
+        if not user_id:
+            return None
+        u = SysUser.objects.filter(user_id=user_id).first()
+        if not u or not u.dept_id:
+            return None
+        d = SysDept.objects.filter(dept_id=u.dept_id).first()
+        if not d:
+            return None
+        return d.dept_id if d.parent_id == 0 else d.parent_id
+    except:
+        return None
+
 # ---- 学生建档 ----
 class StudentQueryByIdCardView(BaseView):
     def get(self, request):
@@ -470,31 +525,206 @@ class EnrollmentWorkNumView(BaseView):
         return success(out)
 
 # ---- 考试 ----
+def _exam_college_scope_qs(qs, request):
+    college=_get_jwc_college(request)
+    if college:
+        allowed=_allowed_dept_ids(college)
+        if allowed is not None:
+            allowed_courses=list(AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True))
+            qs=qs.filter(course_id__in=allowed_courses)
+    return qs
+
 class ExamQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = AcaExam.objects.all()
-        college=_get_jwc_college(request)
-        if college:
-            allowed=_allowed_dept_ids(college)
-            if allowed is not None:
-                allowed_courses=list(AcaCourse.objects.filter(dept_id__in=allowed).values_list('course_id', flat=True))
-                qs=qs.filter(course_id__in=allowed_courses)
+        qs = _exam_college_scope_qs(qs, request)
+        if data.get('courseId'):
+            qs = qs.filter(course_id=data['courseId'])
+        if data.get('semester'):
+            qs = qs.filter(semester=data['semester'])
+        if data.get('examType'):
+            qs = qs.filter(exam_type=str(data['examType']))
+        if data.get('status'):
+            qs = qs.filter(status=data['status'])
+        if data.get('roomNo'):
+            qs = qs.filter(room_no__icontains=data['roomNo'])
+        total = qs.count()
+        lst = list(qs.order_by('-exam_date','start_time')[(page_no-1)*page_size: page_no*page_size].values())
+        return page_response(lst, total, page_no, page_size)
+
+class ExamSaveView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        course_id = body.get('courseId')
+        if not course_id:
+            return error("courseId 必填", code=400)
+        # 课程存在性 + 学院
+        course = AcaCourse.objects.filter(course_id=course_id).first()
+        if not course:
+            return error("课程不存在", code=404)
+        ctx = _current_user_ctx(request)
+        # 教务只能为本院课程排考
+        if ctx['is_jwc'] and ctx['college']:
+            course_college = course.dept_id if (course.dept_id and course.dept_id < 100) else None
+            # dept_id 落在学院级（<1000 视为学院；专业级为 1000+）
+            if course.dept_id and course.dept_id >= 1000:
+                from system_app.models import SysDept
+                d = SysDept.objects.filter(dept_id=course.dept_id).first()
+                course_college = d.parent_id if d and d.parent_id else course.dept_id
+            if course_college != ctx['college']:
+                return error("无权限：仅能为本院课程安排考试", code=403)
+        eid = body.get('examId') or gen_id('EXAM')
+        exam_date = body.get('examDate')
+        start_time = body.get('startTime')
+        end_time = body.get('endTime')
+        classroom_id = body.get('classroomId')
+        room_no = body.get('roomNo')
+        if classroom_id and not room_no:
+            cr = AcaClassroom.objects.filter(classroom_id=classroom_id).first()
+            if cr: room_no = cr.room_no
+        # 计算 exam_time
+        exam_time = None
+        if exam_date and start_time:
+            try:
+                from datetime import datetime
+                exam_time = datetime.strptime(f"{exam_date} {start_time}", "%Y-%m-%d %H:%M:%S" if len(str(start_time))>8 else "%Y-%m-%d %H:%M")
+            except:
+                try:
+                    from datetime import datetime
+                    exam_time = datetime.strptime(f"{exam_date} {start_time}", "%Y-%m-%d %H:%M")
+                except:
+                    exam_time = None
+        college_id = course.dept_id
+        if college_id and college_id >= 1000:
+            from system_app.models import SysDept
+            d = SysDept.objects.filter(dept_id=college_id).first()
+            if d and d.parent_id: college_id = d.parent_id
+        defaults = dict(
+            course_id=course_id,
+            exam_name=body.get('examName') or (course.course_name + ' 考试'),
+            semester=body.get('semester'),
+            exam_type=str(body.get('examType') or '1'),
+            exam_date=exam_date,
+            start_time=start_time,
+            end_time=end_time,
+            classroom_id=classroom_id,
+            room_no=room_no,
+            college_id=college_id,
+            exam_time=exam_time,
+            status=body.get('status') or '0',
+        )
+        if AcaExam.objects.filter(exam_id=eid).exists():
+            AcaExam.objects.filter(exam_id=eid).update(**defaults)
+        else:
+            defaults['exam_id'] = eid
+            defaults['create_by'] = ctx.get('user_id')
+            AcaExam.objects.create(**defaults)
+        return success({"examId": eid})
+
+class ExamPublishView(BaseView):
+    def post(self, request):
+        body = self.parse_body(request)
+        eid = body.get('examId')
+        status = body.get('status') or '1'
+        exam = AcaExam.objects.filter(exam_id=eid).first()
+        if not exam:
+            return error("考试不存在", code=404)
+        ctx = _current_user_ctx(request)
+        if ctx['is_jwc'] and ctx['college'] and exam.college_id != ctx['college']:
+            return error("无权限：仅能发布本院考试", code=403)
+        AcaExam.objects.filter(exam_id=eid).update(status=status)
+        return success({"examId": eid, "status": status})
+
+class ExamDeleteView(BaseView):
+    def post(self, request, exam_id=None):
+        eid = exam_id or self.parse_body(request).get('examId') or self.parse_body(request).get('exam_id')
+        if not eid:
+            return error("examId 不能为空", code=400)
+        exam = AcaExam.objects.filter(exam_id=eid).first()
+        if not exam:
+            return error("考试不存在", code=404)
+        ctx = _current_user_ctx(request)
+        if ctx['is_jwc'] and ctx['college'] and exam.college_id != ctx['college']:
+            return error("无权限：仅能删除本院考试", code=403)
+        exam.delete()
+        return success({"examId": eid})
+
+class ExamStudentQueryView(BaseView):
+    """学生端考试信息查询：仅返回已发布(status=1)且与该生已选课程相关的考试；支持分页与学期筛选"""
+    def post(self, request):
+        page_no, page_size, data = get_page_params(request)
+        student_id = data.get('studentId') or data.get('student_id') or request.GET.get('studentId') or request.GET.get('student_id')
+        if not student_id:
+            info = getattr(request, 'user_info', None)
+            if info and isinstance(info, dict):
+                student_id = info.get('studentId') or info.get('student_id') or info.get('studentId')
+        if not student_id:
+            return error("studentId 必填", code=400)
+        enrolled = list(AcaEnrollment.objects.filter(student_id=student_id, status__in=['0','1']).values_list('course_id', flat=True))
+        if not enrolled:
+            return page_response([], 0, page_no, page_size)
+        qs = AcaExam.objects.filter(course_id__in=enrolled, status='1')
+        if data.get('semester'):
+            qs = qs.filter(semester=data['semester'])
         if data.get('courseId'):
             qs = qs.filter(course_id=data['courseId'])
         total = qs.count()
-        lst = list(qs.order_by('-exam_time')[(page_no-1)*page_size: page_no*page_size].values())
+        lst = list(qs.order_by('exam_date','start_time')[(page_no-1)*page_size: page_no*page_size].values())
         return page_response(lst, total, page_no, page_size)
 
-class ExamAddView(BaseView):
-    def post(self, request):
-        body = self.parse_body(request)
-        eid = body.get('examId') or gen_id('EXAM')
-        e = AcaExam.objects.create(exam_id=eid, course_id=body.get('courseId'), exam_name=body.get('examName'), exam_time=body.get('examTime'), paper_id=body.get('paperId'), status=body.get('status','0'))
-        return success({"examId": e.exam_id})
+    def get(self, request):
+        # 兼容 GET ?studentId=&semester=&pageNo=&pageSize=
+        from django.http import QueryDict
+        data = {k: request.GET.get(k) for k in ['studentId','semester','courseId']}
+        # 构造分页
+        try:
+            page_no = int(request.GET.get('pageNo') or 1)
+            page_size = int(request.GET.get('pageSize') or 10)
+        except:
+            page_no, page_size = 1, 10
+        request._body = b''
+        # 复用 post 逻辑
+        class _R: pass
+        fake = _R()
+        fake.GET = request.GET
+        fake.META = request.META
+        fake.headers = request.headers
+        fake.user_info = getattr(request, 'user_info', None)
+        # 直接走查询
+        student_id = data.get('studentId')
+        if not student_id:
+            info = getattr(request, 'user_info', None)
+            if info and isinstance(info, dict):
+                student_id = info.get('studentId') or info.get('student_id')
+        if not student_id:
+            return error("studentId 必填", code=400)
+        enrolled = list(AcaEnrollment.objects.filter(student_id=student_id, status__in=['0','1']).values_list('course_id', flat=True))
+        if not enrolled:
+            return page_response([], 0, page_no, page_size)
+        qs = AcaExam.objects.filter(course_id__in=enrolled, status='1')
+        if data.get('semester'):
+            qs = qs.filter(semester=data['semester'])
+        if data.get('courseId'):
+            qs = qs.filter(course_id=data['courseId'])
+        total = qs.count()
+        lst = list(qs.order_by('exam_date','start_time')[(page_no-1)*page_size: page_no*page_size].values())
+        return page_response(lst, total, page_no, page_size)
 
 # ---- 成绩 ----
+def _score_course_college(course_id):
+    c = AcaCourse.objects.filter(course_id=course_id).first()
+    if not c or not c.dept_id:
+        return None
+    if c.dept_id >= 1000:
+        from system_app.models import SysDept
+        d = SysDept.objects.filter(dept_id=c.dept_id).first()
+        if d and d.parent_id:
+            return d.parent_id
+    return c.dept_id
+
 class ScoreAddView(BaseView):
+    """录入/修改成绩（含权限与状态校验）。仅保存分数，状态流转见 ScoreSubmitView。"""
     def post(self, request):
         body = self.parse_body(request)
         # GPA 简算
@@ -516,27 +746,99 @@ class ScoreAddView(BaseView):
         # 必须已选且已缴费(status=1)才能录分（防未缴费/未选课幽灵分）
         if not AcaEnrollment.objects.filter(student_id=student_id, course_id=course_id, status='1').exists():
             return error("该生未选课或未缴费，无考试资格", code=400)
+        ctx = _current_user_ctx(request)
+        # 非管理员按学院隔离
+        if not ctx['is_admin'] and ctx['college']:
+            cc = _score_course_college(course_id)
+            if cc is not None and cc != ctx['college']:
+                return error("无权限：仅能操作本院课程成绩", code=403)
         # 补考/重修历史保留：exam_type 0正常 1补考 2重修，is_retake标记
         is_retake = '1' if exam_type in ('1','2') else '0'
+        # 权限校验（基于现有成绩状态）
+        existing = AcaScore.objects.filter(student_id=student_id, course_id=course_id, semester=semester, exam_type=exam_type).first()
+        if existing:
+            cur = existing.status
+            if cur == '3':
+                if not ctx['is_admin']:
+                    return error("成绩已终审，仅管理员可修改", code=403)
+            elif cur == '2':
+                if not ctx['is_admin']:
+                    return error("成绩已提交管理员终审，无法修改", code=403)
+            elif cur == '1':
+                if ctx['is_teacher']:
+                    return error("已提交教务确认，教师无权修改", code=403)
+            # cur=='0'：教师/教务/管理员均可编辑
+        new_status = existing.status if existing else '0'
         # 同(学生,课程,学期,exam_type)已存在则更新，否则创建
-        # 若exam_type为0且已存在，视为首考更新；若为1/2则保留原0记录，新增1条
-        try:
-            s = AcaScore.objects.get(student_id=student_id, course_id=course_id, semester=semester, exam_type=exam_type)
-            # 已存在同类型：仅允许更新分数（幂等）
-            s.score = score
-            s.gpa_point = gpa
-            s.is_retake = is_retake
-            s.exam_id = body.get('examId') or s.exam_id
-            s.save(update_fields=['score','gpa_point','is_retake','exam_id','update_time'])
-            return success({"scoreId": s.score_id, "gpa": float(gpa), "is_retake": s.is_retake})
-        except AcaScore.DoesNotExist:
-            # 若是补考/重修，需确保原首考记录存在（挂科历史）
-            if is_retake=='1' and not AcaScore.objects.filter(student_id=student_id, course_id=course_id, semester=semester, exam_type='0').exists():
-                # 允许直接创建补考但标记
-                pass
+        if existing:
+            existing.score = score
+            existing.gpa_point = gpa
+            existing.is_retake = is_retake
+            existing.exam_id = body.get('examId') or existing.exam_id
+            existing.status = new_status
+            existing.save(update_fields=['score','gpa_point','is_retake','exam_id','status','update_time'])
+            return success({"scoreId": existing.score_id, "gpa": float(gpa), "is_retake": existing.is_retake, "status": new_status})
+        else:
             sid = body.get('scoreId') or body.get('score_id') or gen_id('SCOR')
-            s = AcaScore.objects.create(score_id=sid, student_id=student_id, course_id=course_id, semester=semester, exam_type=exam_type, is_retake=is_retake, exam_id=body.get('examId'), score=score, gpa_point=gpa)
-            return success({"scoreId": s.score_id, "gpa": float(gpa), "is_retake": is_retake})
+            s = AcaScore.objects.create(score_id=sid, student_id=student_id, course_id=course_id, semester=semester, exam_type=exam_type, is_retake=is_retake, exam_id=body.get('examId'), score=score, gpa_point=gpa, status=new_status)
+            return success({"scoreId": s.score_id, "gpa": float(gpa), "is_retake": is_retake, "status": new_status})
+
+class ScoreSubmitView(BaseView):
+    """成绩状态流转（逐级上报）：
+       teacher_submit: 0->1（教师提交，提交后教师不可改）
+       jwc_confirm: 1->2（教务确认，提交后教务不可改）
+       jwc_reject:  ->0（教务退回教师）
+       admin_finalize: 2->3（管理员终审）
+       admin_reopen: ->0（管理员重开）
+    """
+    def post(self, request):
+        body = self.parse_body(request)
+        score_id = body.get('scoreId') or body.get('score_id')
+        action = body.get('action')
+        if not score_id or not action:
+            return error("scoreId与action必填", code=400)
+        s = AcaScore.objects.filter(score_id=score_id).first()
+        if not s:
+            return error("成绩记录不存在", code=404)
+        ctx = _current_user_ctx(request)
+        # 学院隔离
+        if not ctx['is_admin'] and ctx['college']:
+            cc = _score_course_college(s.course_id)
+            if cc is not None and cc != ctx['college']:
+                return error("无权限：仅能操作本院课程成绩", code=403)
+        cur = s.status
+        if action == 'teacher_submit':
+            if cur != '0':
+                return error("仅草稿可提交", code=400)
+            if not (ctx['is_teacher'] or ctx['is_admin']):
+                return error("仅教师或管理员可提交", code=403)
+            s.status = '1'
+        elif action == 'jwc_confirm':
+            if cur != '1':
+                return error("仅待教务确认记录可确认", code=400)
+            if not (ctx['is_jwc'] or ctx['is_admin']):
+                return error("仅教务或管理员可确认", code=403)
+            s.status = '2'
+        elif action == 'jwc_reject':
+            if cur not in ('1', '2'):
+                return error("当前状态不可退回", code=400)
+            if not (ctx['is_jwc'] or ctx['is_admin']):
+                return error("仅教务或管理员可退回", code=403)
+            s.status = '0'
+        elif action == 'admin_finalize':
+            if cur != '2':
+                return error("仅待管理员终审记录可终审", code=400)
+            if not ctx['is_admin']:
+                return error("仅管理员可终审", code=403)
+            s.status = '3'
+        elif action == 'admin_reopen':
+            if not ctx['is_admin']:
+                return error("仅管理员可重开", code=403)
+            s.status = '0'
+        else:
+            return error("未知 action", code=400)
+        s.save(update_fields=['status','update_time'])
+        return success({"scoreId": s.score_id, "status": s.status})
 
 class ScoreImportView(BaseView):
     def post(self, request):
@@ -579,6 +881,10 @@ class ScoreQueryByPageView(BaseView):
             qs = qs.filter(student_id=data['studentId'])
         if data.get('courseId'):
             qs = qs.filter(course_id=data['courseId'])
+        if data.get('status'):
+            qs = qs.filter(status=str(data['status']))
+        if data.get('examType'):
+            qs = qs.filter(exam_type=str(data['examType']))
         total = qs.count()
         lst = list(qs.order_by('-create_time')[(page_no-1)*page_size: page_no*page_size].values())
         return page_response(lst, total, page_no, page_size)

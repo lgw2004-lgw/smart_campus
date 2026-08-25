@@ -121,7 +121,16 @@ class AcaExam(models.Model):
     exam_name = models.CharField(max_length=100)
     exam_time = models.DateTimeField(null=True)
     paper_id = models.BigIntegerField(null=True)
-    status = models.CharField(max_length=1, default='0')
+    status = models.CharField(max_length=1, default='0', help_text='0未发布 1已发布')
+    semester = models.CharField(max_length=20, null=True, help_text='学期如 2024-2025-1')
+    exam_type = models.CharField(max_length=1, default='1', help_text='0期中 1期末 2补考 3重修')
+    exam_date = models.DateField(null=True, help_text='考试日期')
+    start_time = models.TimeField(null=True, help_text='开始时间')
+    end_time = models.TimeField(null=True, help_text='结束时间')
+    classroom_id = models.BigIntegerField(null=True, help_text='教室ID')
+    room_no = models.CharField(max_length=20, null=True, help_text='教室号')
+    college_id = models.BigIntegerField(null=True, help_text='开课学院dept_id')
+    create_by = models.BigIntegerField(null=True, help_text='创建人user_id')
 
     class Meta:
         db_table = 'aca_exam'
@@ -137,6 +146,7 @@ class AcaScore(models.Model):
     semester = models.CharField(max_length=20, null=True)
     exam_type = models.CharField(max_length=1, default='0', help_text='0正常 1补考 2重修')
     is_retake = models.CharField(max_length=1, default='0', help_text='0首考 1补考/重修')
+    status = models.CharField(max_length=1, default='0', help_text='0教师草稿 1教师已提交(待教务确认) 2教务已确认(待管理员终审) 3管理员已终审')
     create_time = models.DateTimeField(auto_now_add=True)
     update_time = models.DateTimeField(auto_now=True, null=True)
 

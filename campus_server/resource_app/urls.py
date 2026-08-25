@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import BuildingQueryByPageView, BuildingSaveView, BuildingDeleteView, RoomSaveView, RoomDeleteView, DormQueryByPageView, DormAssignView, DormExchangeView, DormCheckoutView, DormPublishSaveView, DormPublishQueryView, DormPublishDeleteView, BookQueryByPageView, BookSaveView, BookDeleteView, BorrowAddView, BorrowReturnView, BorrowQueryByPageView
+from .views import BuildingQueryByPageView, BuildingSaveView, BuildingDeleteView, RoomSaveView, RoomDeleteView, DormQueryByPageView, DormAssignView, DormExchangeView, DormCheckoutView, DormPublishSaveView, DormPublishQueryView, DormPublishDeleteView, DormAssignQueryView, BookQueryByPageView, BookSaveView, BookDeleteView, BorrowAddView, BorrowReturnView, BorrowQueryByPageView
 
 urlpatterns = [
     path('building/queryByPage', BuildingQueryByPageView.as_view()),
@@ -10,6 +10,7 @@ urlpatterns = [
     path('room/delete/<int:room_id>', RoomDeleteView.as_view()),
     path('room/delete', RoomDeleteView.as_view()),
     path('dorm/queryByPage', DormQueryByPageView.as_view()),
+    path('dorm/queryAssign', DormAssignQueryView.as_view()),
     path('dorm/assign', DormAssignView.as_view()),
     path('dorm/exchange', DormExchangeView.as_view()),
     path('dorm/checkout', DormCheckoutView.as_view()),

@@ -82,6 +82,9 @@ class DormQueryByPageView(BaseView):
     def post(self, request):
         page_no, page_size, data = get_page_params(request)
         qs = ResRoom.objects.all()
+        if data.get('shuyuan'):
+            bids=list(ResBuilding.objects.filter(building_name__startswith=data['shuyuan']).values_list('building_id', flat=True))
+            qs = qs.filter(building_id__in=bids) if bids else qs.none()
         if data.get('collegeId'):
             bids=list(ResBuilding.objects.filter(dept_id=data['collegeId']).values_list('building_id', flat=True))
             qs = qs.filter(building_id__in=bids) if bids else qs.none()
@@ -90,12 +93,8 @@ class DormQueryByPageView(BaseView):
         if data.get('roomNo'):
             qs = qs.filter(room_no__icontains=data['roomNo'])
         if data.get('checkPublish'):
-            open_ids=_get_open_college_ids()
-            if open_ids is not None:
-                if not open_ids:
-                    return page_response([], 0, page_no, page_size)
-                bids=list(ResBuilding.objects.filter(dept_id__in=open_ids).values_list('building_id', flat=True))
-                qs = qs.filter(building_id__in=bids) if bids else qs.none()
+            if not _is_publish_open():
+                return page_response([], 0, page_no, page_size)
         total = qs.count()
         lst = list(qs[(page_no-1)*page_size: page_no*page_size].values())
         return page_response(lst, total, page_no, page_size)
@@ -231,6 +230,27 @@ class DormPublishDeleteView(BaseView):
             return error("publishId必填", code=400)
         ResDormPublish.objects.filter(publish_id=pid).delete()
         return success()
+
+class DormAssignQueryView(BaseView):
+    def get(self, request):
+        student_id = request.GET.get('studentId') or request.GET.get('student_id')
+        if not student_id:
+            return error("studentId必填", code=400)
+        try:
+            assign = ResDormAssign.objects.get(student_id=student_id)
+            try:
+                building = ResBuilding.objects.get(building_id=assign.building_id)
+                building_name = building.building_name
+            except:
+                building_name = str(assign.building_id)
+            try:
+                room = ResRoom.objects.get(room_id=assign.room_id)
+                room_no = room.room_no
+            except:
+                room_no = str(assign.room_id)
+            return success({"assign_id": assign.assign_id, "building_id": assign.building_id, "building_name": building_name, "room_id": assign.room_id, "room_no": room_no, "bed_no": assign.bed_no})
+        except ResDormAssign.DoesNotExist:
+            return success(None)
 
 # 图书
 class BookQueryByPageView(BaseView):

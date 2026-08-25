@@ -3,9 +3,9 @@
     <!-- 顶部横幅 -->
     <div class="hero">
       <div class="hero-left">
-        <div class="greet">早上好，{{ name }} 同学 👋</div>
+        <div class="greet">{{ greeting }}，{{ name }} 同学 👋</div>
         <h2>今天也要元气满满地学习！</h2>
-        <p>待办：{{ pending }} 门待缴费 · 有新公告 2 条 · 图书应还 1 本</p>
+        <p>待办：{{ pending }} 门待缴费 · 公告 {{ noticeTotal }} 条 · 图书在借 {{ borrowing }} 本</p>
         <div class="actions">
           <el-button type="primary" round @click="$router.push('/courses')">去选课</el-button>
           <el-button round plain @click="$router.push('/my-fee')">去缴费</el-button>
@@ -38,42 +38,68 @@
             <div style="flex:1"><div class="n-title">{{ n.notice_title }}</div><div class="n-time">{{ n.create_time?.slice(0,10) }} · 教务处</div></div>
             <el-tag size="small" :type="n.status==='0'?'success':'info'">{{ n.notice_type==='2'?'公告':'通知' }}</el-tag>
           </div>
+          <el-empty v-if="!notices.length" description="暂无公告" :image-size="60"/>
         </el-card>
       </el-col>
       <el-col :span="10">
         <el-card class="card" shadow="never">
-          <template #header><div class="card-head"><span>我的课表 · 今日</span><span style="font-size:12px;color:#8a94a6">3月周二</span></div></template>
-          <div class="schedule">
+          <template #header><div class="card-head"><span>我的课表 · 今日</span><span style="font-size:12px;color:#8a94a6">{{ todayLabel }}</span></div></template>
+          <div class="schedule" v-if="schedule.length">
             <div class="sch" v-for="sch in schedule" :key="sch.time"><div class="sch-time">{{ sch.time }}</div><div class="sch-box" :style="{background:sch.bg}"><div style="font-weight:600">{{ sch.course }}</div><div style="font-size:12px;opacity:.8">{{ sch.room }} · {{ sch.teacher }}</div></div></div>
           </div>
+          <el-empty v-else description="今天没有课，好好休息～" :image-size="60"/>
         </el-card>
       </el-col>
     </el-row>
   </div>
 </template>
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import request from '@/utils/request'
 const sid=localStorage.getItem('studentId')||''; const name=localStorage.getItem('studentName')||''
-const banners=ref<any[]>([]); const notices=ref<any[]>([]); const pending=ref(0)
-const services=[
-  {title:'选课大厅', desc:'可选 12 门', path:'/courses', icon:'Reading', bg:'#eef3ff', color:'#1e5eff', badge:'选课中'},
-  {title:'一卡通缴费', desc:'待缴 1 笔', path:'/my-fee', icon:'Wallet', bg:'#fff4e6', color:'#ff7e00', badge:''},
-  {title:'宿舍服务', desc:'学3栋 301', path:'/my-dorm', icon:'OfficeBuilding', bg:'#e6f7ff', color:'#0ea5e9', badge:''},
-  {title:'图书借阅', desc:'在借 2 本', path:'/my-book', icon:'Notebook', bg:'#f0fdf4', color:'#16a34a', badge:''},
-  {title:'成绩查询', desc:'GPA 3.4', path:'/my-score', icon:'DataAnalysis', bg:'#fef2f2', color:'#e11d48', badge:''},
-  {title:'通知公告', desc:'2 条未读', path:'/notices', icon:'Bell', bg:'#f5f3ff', color:'#7c3aed', badge:''},
-]
-const schedule=[
-  {time:'08:00 1-2节', course:'高等数学', room:'教学楼 A101', teacher:'王老师', bg:'#eef3ff'},
-  {time:'10:00 3-4节', course:'数据结构', room:'实验楼 202', teacher:'李老师', bg:'#fff4e6'},
-  {time:'14:00 5-6节', course:'大学英语', room:'外语楼 305', teacher:'张老师', bg:'#f0fdf4'},
-]
+const banners=ref<any[]>([]); const notices=ref<any[]>([])
+const pending=ref(0); const noticeTotal=ref(0); const borrowing=ref(0)
+const selectableCnt=ref(0); const unpaidFee=ref(0); const gpa=ref('—'); const dormDesc=ref('')
+const schedule=ref<{time:string;course:string;room:string;teacher:string;bg:string}[]>([])
+const hour=new Date().getHours()
+const greeting = hour<6?'夜深了':hour<9?'早上好':hour<12?'上午好':hour<14?'中午好':hour<18?'下午好':'晚上好'
+const weekCn=['日','一','二','三','四','五','六'][new Date().getDay()]
+const todayLabel=`${new Date().getMonth()+1}月周${weekCn}`
+// 节次 -> 时间（与课表 1-6 节对应）
+const secTime:Record<string,string>={'1':'08:00 第1节','2':'08:55 第2节','3':'10:00 第3节','4':'10:55 第4节','5':'14:00 第5节','6':'14:55 第6节'}
+const bgPool=['#eef3ff','#fff4e6','#f0fdf4','#f5f3ff','#fef2f2','#e6f7ff']
+async function loadToday(){
+  try{
+    let semester=''
+    try{ const t:any=await request.get('/fee/tuition/get'); semester=t?.data?.semester||'' }catch{}
+    const r:any=await request.get('/scheduling/queryStudentTimetable',{params:{studentId:sid}})
+    const jsDay=new Date().getDay() // 0=周日
+    const weekday = jsDay===0?7:jsDay
+    const today=(r.data||[]).filter((x:any)=> Number(x.weekday)===weekday && (!semester || x.semester===semester))
+    const out:any[]=[]; let i=0
+    for(const c of today){ out.push({time:`${secTime[String(c.sectionType)]||('第'+c.sectionType+'节')}`, course:c.courseName||c.courseId, room:c.roomNo||'待定', teacher:c.teacherName||'', bg:bgPool[i++%bgPool.length]}) }
+    schedule.value=out
+  }catch{}
+}
 onMounted(async()=>{
-  const r:any=await request.get('/banner/loadBanner'); banners.value=r.data||[]
-  const r2:any=await request.post('/notice/queryByPage', {pageNo:1,pageSize:5,data:{}}); notices.value=r2.data.list||[]
-  const r3:any=await request.post('/enrollment/queryByPage', {pageNo:1,pageSize:20,data:{studentId:sid, status:'0'}}); pending.value=r3.data.total||0
+  request.get('/banner/loadBanner').then((r:any)=>banners.value=r.data||[]).catch(()=>{})
+  request.post('/notice/queryByPage', {pageNo:1,pageSize:5,data:{}}).then((r:any)=>{ notices.value=r.data.list||[]; noticeTotal.value=r.data.total||0 }).catch(()=>{})
+  request.post('/enrollment/queryByPage', {pageNo:1,pageSize:1,data:{studentId:sid, status:'0'}}).then((r:any)=>pending.value=r.data.total||0).catch(()=>{})
+  request.post('/borrow/queryByPage', {pageNo:1,pageSize:1,data:{studentId:sid, status:'0'}}).then((r:any)=>borrowing.value=r.data.total||0).catch(()=>{})
+  request.get('/scheduling/querySelectable',{params:{studentId:sid}}).then((r:any)=>selectableCnt.value=(r.data||[]).length).catch(()=>{})
+  request.post('/feeOrder/queryByPage', {pageNo:1,pageSize:50,data:{studentId:sid}}).then((r:any)=>{ unpaidFee.value=(r.data.list||[]).filter((o:any)=>o.order_status!=='3').length }).catch(()=>{})
+  request.post('/score/queryByPage', {pageNo:1,pageSize:100,data:{studentId:sid}}).then((r:any)=>{ const l=r.data.list||[]; if(l.length) gpa.value=(l.reduce((s:number,x:any)=>s+Number(x.gpa_point||0),0)/l.length).toFixed(2) }).catch(()=>{})
+  request.get('/dorm/queryAssign',{params:{studentId:sid}}).then((r:any)=>{ const d=r.data||{}; dormDesc.value=d.building_name?`${d.building_name} ${d.room_no}`:'' }).catch(()=>{})
+  loadToday()
 })
+const services=computed(()=>[
+  {title:'选课大厅', desc:`可选 ${selectableCnt.value} 门`, path:'/courses', icon:'Reading', bg:'#eef3ff', color:'#1e5eff', badge:selectableCnt.value>0?'选课中':''},
+  {title:'一卡通缴费', desc: unpaidFee.value>0?`待缴 ${unpaidFee.value} 笔`:'已缴清', path:'/my-fee', icon:'Wallet', bg:'#fff4e6', color:'#ff7e00', badge:unpaidFee.value>0?String(unpaidFee.value):''},
+  {title:'宿舍服务', desc: dormDesc.value||'尚未分配', path:'/my-dorm', icon:'OfficeBuilding', bg:'#e6f7ff', color:'#0ea5e9', badge:''},
+  {title:'图书借阅', desc:`在借 ${borrowing.value} 本`, path:'/my-book', icon:'Notebook', bg:'#f0fdf4', color:'#16a34a', badge:''},
+  {title:'成绩查询', desc:`GPA ${gpa.value}`, path:'/my-score', icon:'DataAnalysis', bg:'#fef2f2', color:'#e11d48', badge:''},
+  {title:'通知公告', desc:`共 ${noticeTotal.value} 条`, path:'/notices', icon:'Bell', bg:'#f5f3ff', color:'#7c3aed', badge:''},
+])
 </script>
 <style scoped>
 .hero{background:linear-gradient(135deg,#1e5eff 0%,#5b8cff 100%);border-radius:16px;padding:18px 20px;color:#fff;display:flex;gap:18px;align-items:center}
